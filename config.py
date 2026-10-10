@@ -1,10 +1,10 @@
 SCREEN_WIDTH = 640
 SCREEN_HEIGHT = 480
 FPS = 60
-FULLSCREEN = False   # True para sempre abrir em tela cheia (útil no R36S)
+FULLSCREEN = True   # True para sempre abrir em tela cheia (útil no R36S)
 EXIT_KEY   = 97    # pygame.K_a — botão A no R36S / tecla 'a' no PC
 
-MOCK_MODE = True    # True para testar sem adaptador OBD
+MOCK_MODE = False    # True para testar sem adaptador OBD
 
 OBD_CONNECTION    = "wifi"  # "serial", "bluetooth" (MAC) ou "wifi"
 
@@ -65,3 +65,15 @@ TEMP_COLOR_DANGER      = 105.0   # °C a partir do qual a temperatura fica verme
 VOLT_COLOR_LOW_DANGER  = 11.8    # V abaixo do qual fica vermelho (bateria crítica)
 VOLT_COLOR_LOW_WARN    = 13.0    # V abaixo do qual fica amarelo (bateria em repouso)
 VOLT_COLOR_HIGH_WARN   = 14.8    # V acima do qual fica vermelho (sobretensão)
+
+# --- HUD Telemetria & Indicadores Avancados ---
+SPEED_MAX                = 200     # km/h fundo de escala do velocimetro
+SHIFT_RPM                = 5300    # RPM em que acende o shift light
+BOOST_MAX_BAR            = 2.0     # bar fundo de escala da barra de turbo
+BAROMETRIC_KPA           = 101.3   # Pressao atmosferica de referencia (kPa)
+FUEL_AFR                 = 14.7    # Relacao estequiometrica ar/combustivel (gasolina)
+FUEL_DENSITY_G_L         = 745.0   # Densidade da gasolina (g/L)
+GEAR_RPM_PER_KMH         = {1: 118, 2: 70, 3: 49, 4: 37, 5: 30} # Relacao RPM/(km/h) por marcha
+ZERO_TO_HUNDRED_TARGET   = 100.0   # Velocidade alvo do teste de aceleracao (km/h)
+BEST_0_100_FILE          = 'logs/best_0_100.json'
+TRIP_ENGINE_ON_RPM       = 400     # RPM minimo considerado como motor ligado para o Trip

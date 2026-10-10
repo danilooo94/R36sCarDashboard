@@ -79,14 +79,19 @@ def find_obd_port():
 
 # Comandos categorizados por taxa de amostragem necessária
 _FAST_COMMANDS = [
-    ("rpm",   commands["ENGINE_SPEED"]),
-    ("speed", commands["VEHICLE_SPEED"]),
+    ("rpm",      commands["ENGINE_SPEED"]),
+    ("speed",    commands["VEHICLE_SPEED"]),
+    ("throttle", commands["THROTTLE_POSITION"]),
+    ("map_kpa",  commands["INTAKE_MAP"]),
 ]
 
 _MEDIUM_COMMANDS = [
-    ("water_temp", commands["ENGINE_COOLANT_TEMP"]),
-    ("oil_temp",   commands["ENGINE_OIL_TEMP"]),
-    ("voltage",    commands["VEHICLE_VOLTAGE"]),
+    ("water_temp",  commands["ENGINE_COOLANT_TEMP"]),
+    ("oil_temp",    commands["ENGINE_OIL_TEMP"]),
+    ("voltage",     commands["VEHICLE_VOLTAGE"]),
+    ("load",        commands["ENGINE_LOAD"]),
+    ("intake_temp", commands["INTAKE_AIR_TEMP"]),
+    ("maf",         commands["MAF_RATE"]),
 ]
 
 _SLOW_COMMANDS = [
@@ -96,12 +101,17 @@ _SLOW_COMMANDS = [
 # Pesos de Média Móvel Exponencial (EMA): val = alpha * novo + (1 - alpha) * anterior
 # alpha menor = mais filtrado contra ruídos e chacoalho de boia
 _EMA_ALPHAS = {
-    "fuel":       0.03,  # Filtro anti-slosh forte para o tanque de combustível
-    "water_temp": 0.20,  # Estabilidade de temperatura
-    "oil_temp":   0.20,
-    "voltage":    0.25,  # Filtro de ripple elétrico
-    "speed":      0.75,  # Velocidade ágil
-    "rpm":        1.00,  # Resposta instantânea de rotação
+    "fuel":        0.03,  # Filtro anti-slosh forte para o tanque de combustível
+    "water_temp":  0.20,  # Estabilidade de temperatura
+    "oil_temp":    0.20,
+    "voltage":     0.25,  # Filtro de ripple elétrico
+    "speed":       0.75,  # Velocidade ágil
+    "rpm":         1.00,  # Resposta instantânea de rotação
+    "throttle":    0.60,  # Posição da borboleta ágil
+    "load":        0.40,
+    "map_kpa":     0.60,  # Pressão no coletor / Boost
+    "intake_temp": 0.20,
+    "maf":         0.40,
 }
 
 

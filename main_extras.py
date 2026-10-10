@@ -22,7 +22,7 @@ def main():
         app_log.info(f"Gravando dados em: {logger.path}")
 
     try:
-        app = MultiPageApp(store, start_page=1)
+        app = MultiPageApp(store, start_page=getattr(config, "START_PAGE", 1))
         app.run()
     except Exception:
         app_log.exception("Erro não tratado no loop principal")

@@ -1,0 +1,30 @@
+# Byte-compiled / cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Logs and runtime data
+logs/
+*.log
+*.csv
+
+# Test / debug images and temporary dumps
+test_*.png
+*.png.tmp
+
+# Executáveis e binários compilados
+*.exe
+*.bin
+
+# Ambientes virtuais
+venv/
+.venv/
+env/
+
+# Configurações de IDE / Sistema operacional
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini
+

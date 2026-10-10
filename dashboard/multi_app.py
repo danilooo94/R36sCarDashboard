@@ -1,4 +1,5 @@
 import math
+import time
 
 import pygame
 import config
@@ -6,6 +7,8 @@ from dashboard.alarm       import AlarmManager
 from dashboard.page_hud    import HudPage
 from dashboard.page_extras import ExtrasPage
 from dashboard.page_retro  import RetroPage
+from dashboard.page_telemetry import TelemetryPage
+from dashboard.telemetry   import DerivedTelemetry
 
 
 class MultiPageApp:
@@ -26,6 +29,9 @@ class MultiPageApp:
         self.store   = store
         self.running = True
 
+        # ── Telemetria derivada (marchas, 0-100, consumo, boost) ─────────────
+        self.derived = DerivedTelemetry()
+
         # ── Alarm (global, always active) ────────────────────────────────────
         self.alarm = AlarmManager()
 
@@ -34,6 +40,7 @@ class MultiPageApp:
             HudPage(self.screen),
             ExtrasPage(self.screen),
             RetroPage(self.screen),
+            TelemetryPage(self.screen),
         ]
         self.current = max(0, min(start_page, len(self.pages) - 1))
 
@@ -176,6 +183,7 @@ class MultiPageApp:
                 self._handle_events()
 
                 data = self.store.snapshot()
+                data.update(self.derived.update(data, time.monotonic()))
                 self.alarm.update(data)
 
                 self.screen.fill(config.COLORS["bg"])
