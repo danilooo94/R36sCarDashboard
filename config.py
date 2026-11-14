@@ -6,22 +6,10 @@ EXIT_KEY   = 97    # pygame.K_a — botão A no R36S / tecla 'a' no PC
 
 MOCK_MODE = False    # True para testar sem adaptador OBD
 
-OBD_CONNECTION    = "wifi"  # "serial", "bluetooth" (MAC) ou "wifi"
-
-# --- Configurações para SERIAL ou BLUETOOTH PAREADO (COMx / rfcomm) ---
-OBD_PORT          = "auto"    # "auto" detecta a porta, ou força ex: "COM3", "/dev/rfcomm0"
+# --- Configurações de Conexão USB Serial (ELM327 / OBD-II) ---
+OBD_PORT          = "auto"    # "auto" detecta a porta USB, ou força ex: "COM3", "/dev/ttyUSB0"
 OBD_BAUD          = 38400     # 38400 (padrão ELM327), 115200, ou 9600
-
-# --- Configurações para BLUETOOTH DIRETO (MAC Address) ---
-# (Requer PyBluez instalado se não estiver usando rfcomm)
-OBD_MAC           = "44:DC:C3:0D:67:A3"
-
-# --- Configurações para WIFI ---
-OBD_HOST          = "192.168.0.10"
-OBD_WIFI_PORT     = 35000
-
 OBD_POLL_INTERVAL = 0.01      # segundos entre ciclos de leitura (prioridade rápida a ~15-20 Hz)
-ESP32_BAUD = 115200
 
 # Navegação entre páginas
 import pygame

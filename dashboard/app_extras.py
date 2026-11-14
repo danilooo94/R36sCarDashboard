@@ -113,8 +113,7 @@ class AppExtras:
                     widget.update(data)
                     widget.draw()
 
-                self._draw_chrome(data.get("connected", False), data.get("esp32_port", ""))
-                self._draw_chrome(data.get("connected", False), data.get("obd_port", "") or data.get("esp32_port", ""))
+                self._draw_chrome(data.get("connected", False), data.get("obd_port", ""))
                 self._draw_alarm_borders()   # drawn last so borders sit on top
                 pygame.display.flip()
                 self.clock.tick(config.FPS)

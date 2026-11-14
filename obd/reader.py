@@ -28,18 +28,17 @@ _OBD_DESC_KEYWORDS = (
     "CP210",
     "PL2303",
     "USB SERIAL",
-    "BLUETOOTH",
-    "STANDARD SERIAL",
+    "USB-SERIAL",
 )
 
 
 def find_obd_port():
-    """Scan serial ports and return the first one that looks like an OBD/ELM327 adapter.
+    """Scan USB serial ports and return the first one that looks like an OBD/ELM327 adapter.
 
     Matching order:
-      1. Exact VID/PID from known adapters list
-      2. Description or hardware ID containing OBD/serial keywords
-      3. Linux fallback: first ttyUSB*, ttyACM*, or rfcomm* device
+      1. Exact VID/PID from known USB adapters list
+      2. Description or hardware ID containing OBD/USB-serial keywords
+      3. Linux fallback: first ttyUSB* or ttyACM* device
       4. Single COM port fallback if exactly one port exists
     """
     ports = list(serial.tools.list_ports.comports())
@@ -60,10 +59,10 @@ def find_obd_port():
             app_log.info(f"[OBD] found by description: {port.device} — {port.description}")
             return port.device
 
-    # Pass 3 — Linux fallback: ttyUSB*, ttyACM*, rfcomm*
+    # Pass 3 — Linux fallback: wired USB serial devices (ttyUSB*, ttyACM*)
     if sys.platform.startswith("linux"):
         candidates = sorted(
-            glob.glob("/dev/ttyUSB*") + glob.glob("/dev/ttyACM*") + glob.glob("/dev/rfcomm*")
+            glob.glob("/dev/ttyUSB*") + glob.glob("/dev/ttyACM*")
         )
         if candidates:
             app_log.info(f"[OBD] found by device path: {candidates[0]}")
@@ -142,28 +141,12 @@ class OBDReader(threading.Thread):
         return self._ema_values[key]
 
     def _resolve_port(self):
-        conn_type = getattr(config, "OBD_CONNECTION", "serial").lower()
-        
-        if conn_type == "wifi":
-            host = getattr(config, "OBD_HOST", "192.168.0.10")
-            port = getattr(config, "OBD_WIFI_PORT", 35000)
-            return (host, port)
-            
-        elif conn_type == "bluetooth":
-            mac = getattr(config, "OBD_MAC", None)
-            if mac:
-                return mac
-            app_log.warning("[OBD] OBD_MAC não configurado para conexão bluetooth")
-            return None
-            
-        else:
-            # Padrão: "serial" (inclui Bluetooth via /dev/rfcomm0)
-            if self.port != "auto":
-                return self.port
-            port = find_obd_port()
-            if port is None:
-                app_log.warning("[OBD] no serial port found — retrying in 3 s")
-            return port
+        if self.port != "auto":
+            return self.port
+        port = find_obd_port()
+        if port is None:
+            app_log.warning("[OBD] no USB serial port found — retrying in 3 s")
+        return port
 
     def run(self):
         while not self._stop.is_set():
@@ -179,7 +162,6 @@ class OBDReader(threading.Thread):
                 self._conn = conn
                 self.store.set("connected", True)
                 self.store.set("obd_port", port)
-                self.store.set("esp32_port", port)
                 app_log.info(f"[OBD] connected successfully to {port}")
 
                 cycle = 0
@@ -215,7 +197,6 @@ class OBDReader(threading.Thread):
                 self.store.set("connected", False)
                 self._stop.wait(timeout=2)
                 self.store.set("obd_port", "")
-                self.store.set("esp32_port", "")
                 if self._conn:
                     try:
                         self._conn.close()

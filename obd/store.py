@@ -10,10 +10,10 @@ class DataStore:
         "throttle":   0.0,
         "load":       0.0,
         "intake_temp": 0.0,
-        "map_kpa":    0.0,
-        "maf":        0.0,
+        "map_kpa":     0.0,
+        "maf":         0.0,
+        "fuel":        0.0,
         "connected":   False,
-        "esp32_port":  "",
         "obd_port":    "",
     }
 

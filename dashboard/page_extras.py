@@ -52,7 +52,7 @@ class ExtrasPage(Page):
                          (W // 2, _DIVIDER_Y + 20), (W // 2, config.SCREEN_HEIGHT - 10), 1)
         # OBD status dot + port name
         connected = data.get("connected", False)
-        port = data.get("obd_port", "") or data.get("esp32_port", "")
+        port = data.get("obd_port", "")
         self._draw_obd_dot(connected, port)
 
     # ── Alarm borders ────────────────────────────────────────────────────────

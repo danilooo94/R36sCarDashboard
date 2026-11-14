@@ -33,8 +33,7 @@ echo "Configurando serviço para executar como usuário: $RUN_USER"
 sudo bash -c "cat <<EOF > $SERVICE_FILE
 [Unit]
 Description=CarDataReader OBD HUD Dashboard
-After=network.target bluetooth.target systemd-user-sessions.service
-Wants=bluetooth.target
+After=systemd-user-sessions.service
 
 [Service]
 Type=simple

@@ -40,18 +40,7 @@ if [ "$(id -u)" -ne 0 ]; then
     sudo usermod -a -G dialout,video,input "$USER" 2>/dev/null || true
 fi
 
-# 6. Suporte opcional a Bluetooth (se configurado com MAC e rfcomm no Linux)
-if command -v rfcomm >/dev/null 2>&1; then
-    # Se o config tiver um MAC e não existir /dev/rfcomm0, tenta vincular
-    MAC=$(grep -E '^\s*OBD_MAC\s*=' config.py 2>/dev/null | cut -d'"' -f2 | cut -d"'" -f2)
-    CONN=$(grep -E '^\s*OBD_CONNECTION\s*=' config.py 2>/dev/null | cut -d'"' -f2 | cut -d"'" -f2)
-    if [ "$CONN" = "bluetooth" ] && [ -n "$MAC" ] && [ ! -e "/dev/rfcomm0" ]; then
-        echo "[CarDataReader] Vinculando /dev/rfcomm0 ao MAC $MAC..."
-        rfcomm bind 0 "$MAC" 2>/dev/null || true
-    fi
-fi
-
-# 7. Execução do aplicativo unificado (MultiPageApp)
+# 6. Execução do aplicativo unificado (MultiPageApp)
 echo "[CarDataReader] Iniciando main.py..."
 exec python3 main.py
 
