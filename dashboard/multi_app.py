@@ -4,10 +4,7 @@ import time
 import pygame
 import config
 from dashboard.alarm       import AlarmManager
-from dashboard.page_hud    import HudPage
-from dashboard.page_extras import ExtrasPage
-from dashboard.page_retro  import RetroPage
-from dashboard.page_telemetry import TelemetryPage
+from dashboard.page_daily  import DailyCockpitPage
 from dashboard.telemetry   import DerivedTelemetry
 
 
@@ -37,10 +34,7 @@ class MultiPageApp:
 
         # ── Pages ────────────────────────────────────────────────────────────
         self.pages = [
-            HudPage(self.screen),
-            ExtrasPage(self.screen),
-            RetroPage(self.screen),
-            TelemetryPage(self.screen),
+            DailyCockpitPage(self.screen),
         ]
         self.current = max(0, min(start_page, len(self.pages) - 1))
 

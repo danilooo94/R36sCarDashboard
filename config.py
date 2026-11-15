@@ -1,10 +1,10 @@
 SCREEN_WIDTH = 640
 SCREEN_HEIGHT = 480
 FPS = 60
-FULLSCREEN = True   # True para sempre abrir em tela cheia (útil no R36S)
+FULLSCREEN = False   # True para sempre abrir em tela cheia (útil no R36S)
 EXIT_KEY   = 97    # pygame.K_a — botão A no R36S / tecla 'a' no PC
 
-MOCK_MODE = False    # True para testar sem adaptador OBD
+MOCK_MODE = True    # True para testar sem adaptador OBD
 
 # --- Configurações de Conexão USB Serial (ELM327 / OBD-II) ---
 OBD_PORT          = "auto"    # "auto" detecta a porta USB, ou força ex: "COM3", "/dev/ttyUSB0"
@@ -15,18 +15,18 @@ OBD_POLL_INTERVAL = 0.01      # segundos entre ciclos de leitura (prioridade rá
 import pygame
 PAGE_NEXT_KEY = pygame.K_RIGHT    # D-pad direita no R36S / seta direita no PC
 PAGE_PREV_KEY = pygame.K_LEFT     # D-pad esquerda no R36S / seta esquerda no PC
-START_PAGE    = 0                 # Página inicial (0 = HUD, 1 = Extras)
+START_PAGE    = 0                 # Página inicial (0 = Daily Cockpit)
 
 COLORS = {
-    "bg":      (5,   5,   10),
-    "primary": (0,   255, 200),
-    "danger":  (255, 60,  50),
-    "warning": (255, 190, 0),
-    "text":    (240, 245, 255),
-    "muted":   (80,  105, 115),
-    "panel":   (18,  22,  28),
-    "arc_bg":  (22,  32,  42),
-    "divider": (35,  55,  65),
+    "bg":      (11,  16,  23),
+    "primary": (56,  189, 248),
+    "danger":  (239, 68,  68),
+    "warning": (245, 158, 11),
+    "text":    (248, 250, 252),
+    "muted":   (148, 163, 184),
+    "panel":   (17,  24,  36),
+    "arc_bg":  (30,  41,  59),
+    "divider": (30,  41,  59),
 }
 
 ALARM_SOUND  = False  # False para silenciar os beeps de alarme
@@ -40,12 +40,6 @@ RPM_REDLINE  = 5500
 TEMP_MIN     = 40
 TEMP_MAX     = 120
 TEMP_HISTORY = 120  # amostras no gráfico
-
-# --- Configurações da HUD Retrô (Expressões do Doomguy) ---
-RETRO_TEMP_THRESHOLD = 100   # °C a partir do qual entra em chamas (burning)
-RETRO_TEMP_ALERT     = 89    # °C a partir do qual o nicho pisca em vermelho transparente
-RETRO_SPEED_HAPPY    = 80    # km/h mínimo para expressão feliz
-RETRO_SPEED_SCARY    = 100   # km/h a partir do qual mostra expressão assustada
 
 # --- Limiares de Cores para Indicadores (Temperatura e Tensão) ---
 TEMP_COLOR_WARN        = 95.0    # °C a partir do qual a temperatura fica amarela

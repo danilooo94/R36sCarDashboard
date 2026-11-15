@@ -29,7 +29,7 @@ flowchart LR
         App["MultiPageApp"]
         Derived["DerivedTelemetry\n(Gear, 0-100, Trip, Fuel, Boost)"]
         Alarm["AlarmManager\n(Thresholds, Blink & Sine Beeps)"]
-        Pages["Active Page\n(HUD | Extras | Retro | Telemetry)"]
+        Page["DailyCockpitPage\n(OEM Daily / Eco HUD)"]
     end
 
     Reader -->|"EMA-filtered sensor values"| Store
@@ -37,7 +37,7 @@ flowchart LR
     Store -->|"snapshot()"| App
     App --> Derived
     Derived -->|"enriched snapshot"| Alarm
-    Derived -->|"enriched snapshot"| Pages
+    Derived -->|"enriched snapshot"| Page
 ```
 
 ### Threading & Execution Model
@@ -93,14 +93,14 @@ Raw sensor readings pass through a per-metric Exponential Moving Average (`val =
 
 ---
 
-### 4. Multi-Page UI & Global Alarms (`dashboard/`)
+### 4. OEM Daily / Eco UI & Global Alarms (`dashboard/`)
 
-`MultiPageApp` (`dashboard/multi_app.py`) manages a `CONNECTING` → `DASHBOARD` state machine, gamepad/keyboard navigation (D-pad Left/Right, L1/R1, or Left/Right arrow keys to switch pages; `A` button/key to exit), global alarms, and four `Page` implementations (`dashboard/page_base.py`):
+`MultiPageApp` (`dashboard/multi_app.py`) manages a `CONNECTING` → `DASHBOARD` state machine, gamepad/keyboard controls (`A` button/key to exit, D-pad or L1/R1 ready for additional pages), global alarms, and the **`DailyCockpitPage`** (`dashboard/page_daily.py`) visualization:
 
-1. **`HudPage` (`dashboard/page_hud.py`)**: Clean digital speedometer arc, rolling temperature history graph, and battery voltage bar.
-2. **`ExtrasPage` (`dashboard/page_extras.py`)**: Dedicated oil and coolant temperature gauges, vehicle voltage gauge, R36S console battery indicator, and active USB port badge.
-3. **`RetroPage` (`dashboard/page_retro.py`)**: Classic Doom-inspired status HUD featuring modular widgets (`dashboard/widgets/doom/`) and reactive Doomguy expressions based on speed and coolant temperature thresholds.
-4. **`TelemetryPage` (`dashboard/page_telemetry.py`)**: High-density procedural steampunk/Doom telemetry cluster pre-rendering static metal plates, rivets, and supersampled circular dials once at startup, then drawing anti-aliased needles, shift light, warning lamps, TPS/Load bars, Boost/Fuel bars, Gear indicator, Berserk 0–100 timer, Trip timer, and Fuel Economy at 60 FPS.
+- **Dual Anti-Aliased Arc Rings**: 3x supersampled static ring tracks with smooth `gfxdraw` active sweeps — **Left Ring** displays `RPM ×1000` (color-shifting at `SHIFT_RPM` and `RPM_REDLINE`) plus the engaged gear badge (`N`, `D1`–`D5`); **Right Ring** displays digital `KM/H` plus fuel level percentage.
+- **Trip & Economy Computer Card**: real-time fuel economy (`km/l`), rolling 48-sample consumption sparkline graph with translucent area fill, and automatic 0–100 km/h sprint status/record.
+- **Health Status Pills**: 4 bottom cards (`ÁGUA`, `ÓLEO`, `BATERIA`, `ACEL / BOOST`) with color-coded status dots and borders that highlight in amber (warning) or blinking red (danger).
+- **Top Status Strip**: live engine-on Trip timer, USB OBD-II link indicator + active serial port label, and Intake Air Temperature (`IAT`).
 
 `AlarmManager` (`dashboard/alarm.py`) evaluates oil temperature, coolant temperature, and battery voltage every frame, driving synchronized warning (1 Hz) / danger (2 Hz) blinking borders and procedurally synthesized sine-wave audio alerts (`ALARM_SOUND` in `config.py`).
 
@@ -111,8 +111,7 @@ Raw sensor readings pass through a per-metric Exponential Moving Average (`val =
 ```text
 .
 ├── config.py                  # Display, USB serial, thresholds, and telemetry constants
-├── main.py                    # Standard entry point (starts MultiPageApp on START_PAGE)
-├── main_extras.py             # Entry point with global unhandled-exception file logging
+├── main.py                    # Unified entry point with global exception logging
 ├── app_log.py                 # Rotating session diagnostic/error logger (logs/errors_*.txt)
 ├── start.sh                   # Armbian / R36S launch script (KMS/DRM or X11 + dialout setup)
 ├── install_autostart.sh       # Systemd service installer for automatic boot into TTY1
@@ -121,18 +120,12 @@ Raw sensor readings pass through a per-metric Exponential Moving Average (`val =
 │   ├── mock.py                # Synthetic sensor generator for offline development (MOCK_MODE)
 │   ├── store.py               # Thread-safe DataStore shared between threads
 │   └── logger.py              # Background CSV session recorder (logs/session_*.csv)
-├── dashboard/
-│   ├── multi_app.py           # 60 FPS state machine, input router, and page switcher
-│   ├── page_base.py           # Abstract Page lifecycle (update, draw, chrome, alarms)
-│   ├── page_hud.py            # Page 0: Main HUD
-│   ├── page_extras.py         # Page 1: Oil/Coolant/Voltage & Console Battery
-│   ├── page_retro.py          # Page 2: Doom Retro HUD
-│   ├── page_telemetry.py      # Page 3: Full OBD-II Telemetry Cluster
-│   ├── telemetry.py           # GearEstimator, ZeroToHundred, Boost, Trip & Fuel math
-│   ├── alarm.py               # Threshold evaluator, blink timer & procedural audio beeps
-│   └── widgets/               # Reusable gauge, bar, graph, and Doom-themed UI components
-├── assets/                    # Sprites, backgrounds, and tachometer textures
-└── fonts/                     # Custom TrueType fonts (DooM.ttf)
+└── dashboard/
+    ├── multi_app.py           # 60 FPS state machine, input router, and page host
+    ├── page_base.py           # Abstract Page lifecycle (update, draw, chrome, alarms)
+    ├── page_daily.py          # OEM Daily / Eco & Trip Computer HUD (640x480)
+    ├── telemetry.py           # GearEstimator, ZeroToHundred, Boost, Trip & Fuel math
+    └── alarm.py               # Threshold evaluator, blink timer & procedural audio beeps
 ```
 
 ---
