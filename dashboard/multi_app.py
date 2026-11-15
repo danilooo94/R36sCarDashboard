@@ -3,9 +3,10 @@ import time
 
 import pygame
 import config
-from dashboard.alarm       import AlarmManager
-from dashboard.page_daily  import DailyCockpitPage
-from dashboard.telemetry   import DerivedTelemetry
+from dashboard.alarm           import AlarmManager
+from dashboard.console_battery import ConsoleBatteryReader, draw_phone_battery
+from dashboard.page_daily      import DailyCockpitPage
+from dashboard.telemetry       import DerivedTelemetry
 
 
 class MultiPageApp:
@@ -28,6 +29,7 @@ class MultiPageApp:
 
         # ── Telemetria derivada (marchas, 0-100, consumo, boost) ─────────────
         self.derived = DerivedTelemetry()
+        self.console_battery = ConsoleBatteryReader()
 
         # ── Alarm (global, always active) ────────────────────────────────────
         self.alarm = AlarmManager()
@@ -44,6 +46,7 @@ class MultiPageApp:
 
         # ── Fonts ────────────────────────────────────────────────────────────
         self._font_ind = pygame.font.SysFont("monospace", 10)
+        self._font_batt = pygame.font.SysFont("consolas,dejavusansmono,monospace", 13, bold=True)
         self._font_title = pygame.font.SysFont("monospace", 32, bold=True)
         self._font_subtitle = pygame.font.SysFont("monospace", 16)
 
@@ -129,13 +132,23 @@ class MultiPageApp:
 
     # ── Initial Connection Screen ────────────────────────────────────────────
 
-    def _draw_connecting_screen(self):
+    def _draw_connecting_screen(self, data: dict = None):
         """Draws the initial screen while waiting for OBD-II connection."""
         title = self._font_title.render("CAR DATA READER", True, config.COLORS["text"])
         subtitle = self._font_subtitle.render("Conectando à interface OBD-II...", True, config.COLORS["muted"])
         
         W = config.SCREEN_WIDTH
         H = config.SCREEN_HEIGHT
+
+        if data and getattr(config, "SHOW_CONSOLE_BATTERY", True):
+            draw_phone_battery(
+                self.screen,
+                W - 24,
+                24,
+                data.get("console_battery_pct"),
+                bool(data.get("console_battery_charging", False)),
+                self._font_batt,
+            )
 
         self._draw_engine_spinner((W // 2, H // 2 - 105))
         self.screen.blit(title, ((W - title.get_width()) // 2, H // 2 - 45))
@@ -176,8 +189,13 @@ class MultiPageApp:
             while self.running:
                 self._handle_events()
 
+                now = time.monotonic()
                 data = self.store.snapshot()
-                data.update(self.derived.update(data, time.monotonic()))
+                data.update(self.derived.update(data, now))
+                if getattr(config, "SHOW_CONSOLE_BATTERY", True):
+                    batt_pct, batt_chg = self.console_battery.read(now)
+                    data["console_battery_pct"] = batt_pct
+                    data["console_battery_charging"] = batt_chg
                 self.alarm.update(data)
 
                 self.screen.fill(config.COLORS["bg"])
@@ -187,7 +205,7 @@ class MultiPageApp:
                     if data.get("connected", False):
                         self.state = "DASHBOARD"
                     else:
-                        self._draw_connecting_screen()
+                        self._draw_connecting_screen(data)
 
                 if self.state == "DASHBOARD":
                     page = self.pages[self.current]

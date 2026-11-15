@@ -100,7 +100,7 @@ Raw sensor readings pass through a per-metric Exponential Moving Average (`val =
 - **Dual Anti-Aliased Arc Rings**: 3x supersampled static ring tracks with smooth `gfxdraw` active sweeps — **Left Ring** displays `RPM ×1000` (color-shifting at `SHIFT_RPM` and `RPM_REDLINE`) plus the engaged gear badge (`N`, `D1`–`D5`); **Right Ring** displays digital `KM/H` plus fuel level percentage.
 - **Trip & Economy Computer Card**: real-time fuel economy (`km/l`), rolling 48-sample consumption sparkline graph with translucent area fill, and automatic 0–100 km/h sprint status/record.
 - **Health Status Pills**: 4 bottom cards (`ÁGUA`, `ÓLEO`, `BATERIA`, `ACEL / BOOST`) with color-coded status dots and borders that highlight in amber (warning) or blinking red (danger).
-- **Top Status Strip**: live engine-on Trip timer, USB OBD-II link indicator + active serial port label, and Intake Air Temperature (`IAT`).
+- **Top Status Strip**: live engine-on Trip timer, USB OBD-II link indicator + active serial port label, Intake Air Temperature (`IAT`), and a smartphone-style R36S console battery indicator (`SHOW_CONSOLE_BATTERY` in `config.py`).
 
 `AlarmManager` (`dashboard/alarm.py`) evaluates oil temperature, coolant temperature, and battery voltage every frame, driving synchronized warning (1 Hz) / danger (2 Hz) blinking borders and procedurally synthesized sine-wave audio alerts (`ALARM_SOUND` in `config.py`).
 
@@ -124,6 +124,7 @@ Raw sensor readings pass through a per-metric Exponential Moving Average (`val =
     ├── multi_app.py           # 60 FPS state machine, input router, and page host
     ├── page_base.py           # Abstract Page lifecycle (update, draw, chrome, alarms)
     ├── page_daily.py          # OEM Daily / Eco & Trip Computer HUD (640x480)
+    ├── console_battery.py     # R36S sysfs / OS battery reader & smartphone-style badge
     ├── telemetry.py           # GearEstimator, ZeroToHundred, Boost, Trip & Fuel math
     └── alarm.py               # Threshold evaluator, blink timer & procedural audio beeps
 ```

@@ -12,6 +12,7 @@ import pygame
 from pygame import gfxdraw
 
 import config
+from dashboard.console_battery import draw_phone_battery
 from dashboard.page_base import Page
 from dashboard.telemetry import fmt_hms
 
@@ -316,7 +317,7 @@ class DailyCockpitPage(Page):
         if max(w_st, o_st, v_st) == 2 and blink:
             cv.blit(self._danger_glow, (0, 0))
 
-        # 1. Top Status Bar (Trip | Connection dot | IAT)
+        # 1. Top Status Bar (Trip | Connection dot | IAT | R36S Battery)
         cv.blit(self._txt(f"TRIP  {fmt_hms(trip_s)}", 13, TXT_SUB, mono=True), (24, 17))
 
         dot_col = GREEN_DOT if connected else RED
@@ -325,9 +326,23 @@ class DailyCockpitPage(Page):
         if connected and obd_port:
             cv.blit(self._txt(obd_port, 11, TXT_MUTED, mono=True), (W // 2 + 62, 18))
 
+        iat_right_x = W - 24
+        if getattr(config, "SHOW_CONSOLE_BATTERY", True):
+            batt_left_x = draw_phone_battery(
+                cv,
+                W - 24,
+                24,
+                d.get("console_battery_pct"),
+                bool(d.get("console_battery_charging", False)),
+                self._font(13, mono=True, bold=True),
+            )
+            sep_x = batt_left_x - 10
+            pygame.draw.line(cv, BORDER, (sep_x, 17), (sep_x, 31), 1)
+            iat_right_x = sep_x - 10
+
         iat_str = f"IAT {iat:.0f}°C" if iat > 0 else "IAT --°C"
         iat_surf = self._txt(iat_str, 13, TXT_SUB, mono=True)
-        cv.blit(iat_surf, (W - 24 - iat_surf.get_width(), 17))
+        cv.blit(iat_surf, (iat_right_x - iat_surf.get_width(), 17))
 
         # 2. Left Smooth Ring: RPM + Gear
         self._rpm_disp += (rpm - self._rpm_disp) * 0.28

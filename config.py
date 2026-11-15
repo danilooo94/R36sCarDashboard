@@ -3,6 +3,7 @@ SCREEN_HEIGHT = 480
 FPS = 60
 FULLSCREEN = False   # True para sempre abrir em tela cheia (útil no R36S)
 EXIT_KEY   = 97    # pygame.K_a — botão A no R36S / tecla 'a' no PC
+SHOW_CONSOLE_BATTERY = True  # Exibe ícone + % da bateria do R36S no topo da tela
 
 MOCK_MODE = True    # True para testar sem adaptador OBD
 
