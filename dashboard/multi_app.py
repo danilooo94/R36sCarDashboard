@@ -5,6 +5,7 @@ import pygame
 from pygame import gfxdraw
 
 import config
+import settings
 from dashboard.alarm           import AlarmManager
 from dashboard.console_battery import ConsoleBatteryReader, draw_phone_battery
 from dashboard.page_daily      import (
@@ -26,24 +27,22 @@ from dashboard.page_daily      import (
     _build_radial_glow,
     _draw_thick_arc,
 )
+from dashboard.page_settings   import SettingsPage
+from dashboard.page_webserver  import WebServerPage
 from dashboard.telemetry       import DerivedTelemetry
-from i18n                      import get_lang, next_lang, t
+from i18n                      import get_lang, t
+from web.server                import WebAnalyticsServer
 
 
 class MultiPageApp:
-    """Unified application loop that manages dashboard pages and the OEM startup screen.
+    """Unified application loop managing Cockpit, Web Analytics Server, and Settings pages."""
 
-    Pages can be cycled at runtime using the left/right arrow keys
-    (or D-pad on the R36S).  The AlarmManager runs globally so beeps
-    and blink state are maintained regardless of which page is visible.
-    """
-
-    _CONN_RING_CENTER = (320, 182)
-    _CONN_RING_R      = 68
+    _CONN_RING_CENTER = (320, 172)
+    _CONN_RING_R      = 66
     _CONN_RING_THICK  = 12
     _MIN_SPLASH_SECS  = 1.4
 
-    def __init__(self, store, start_page=0):
+    def __init__(self, store, start_page=0, web_server=None):
         pygame.init()
         flags = pygame.FULLSCREEN if config.FULLSCREEN else 0
         self.screen = pygame.display.set_mode(
@@ -53,22 +52,25 @@ class MultiPageApp:
         self.store   = store
         self.running = True
 
-        # ── Telemetria derivada & bateria do console ─────────────────────────
+        # ── Telemetria derivada, bateria do console & Webserver ──────────────
         self.derived = DerivedTelemetry()
         self.console_battery = ConsoleBatteryReader()
+        self.web_server = web_server or WebAnalyticsServer()
 
         # ── Alarm (global, always active) ────────────────────────────────────
         self.alarm = AlarmManager()
 
-        # ── Pages ────────────────────────────────────────────────────────────
+        # ── Pages (0 = Cockpit, 1 = Web Analytics Server, 2 = Settings) ──────
         self.pages = [
             DailyCockpitPage(self.screen),
+            WebServerPage(self.screen, self.web_server),
+            SettingsPage(self.screen),
         ]
         self.current = max(0, min(start_page, len(self.pages) - 1))
+        self._axis_x_active = False
 
-        # ── State Machine ────────────────────────────────────────────────────
-        # "CONNECTING" shows the initial loading screen until OBD connects.
-        self.state = "CONNECTING"
+        # ── Connection state for Page 0 ──────────────────────────────────────
+        self._ever_connected = False
         self._boot_at = time.monotonic()
 
         # ── Fonts (matched to DailyCockpitPage) ──────────────────────────────
@@ -79,6 +81,7 @@ class MultiPageApp:
         self._font_hdr      = pygame.font.SysFont(sans, 13, bold=True)
         self._font_title    = pygame.font.SysFont(sans, 19, bold=True)
         self._font_sub      = pygame.font.SysFont(sans, 13, bold=False)
+        self._font_hint     = pygame.font.SysFont(sans, 11, bold=False)
         self._font_pill_lbl = pygame.font.SysFont(sans, 10, bold=True)
         self._font_pill_val = pygame.font.SysFont(mono, 14, bold=True)
         self._font_badge    = pygame.font.SysFont(mono, 12, bold=True)
@@ -101,6 +104,9 @@ class MultiPageApp:
     def _prev_page(self):
         self.current = (self.current - 1) % len(self.pages)
 
+    def _showing_connecting(self) -> bool:
+        return self.current == 0 and not self._ever_connected
+
     # ── Event handling ───────────────────────────────────────────────────────
 
     def _handle_events(self):
@@ -113,29 +119,34 @@ class MultiPageApp:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
+                continue
+
+            # Give active page first chance to handle navigation/toggles (except splash on page 0)
+            if not self._showing_connecting() and self.pages[self.current].handle_event(event):
+                continue
 
             # ── Keyboard ─────────────────────────────────────────────────────
-            elif event.type == pygame.KEYDOWN:
-                if event.key == exit_key:
+            if event.type == pygame.KEYDOWN:
+                if event.key in (exit_key, pygame.K_ESCAPE):
                     self.running = False
                 elif event.key == page_next_key:
                     self._next_page()
                 elif event.key == page_prev_key:
                     self._prev_page()
                 elif event.key == lang_key:
-                    next_lang()
+                    settings.cycle_language()
                     pygame.display.set_caption(t("app.window_title"))
 
             # ── Joystick buttons ─────────────────────────────────────────────
             elif event.type == pygame.JOYBUTTONDOWN:
                 if event.button == 0:
                     self.running = False
-                elif event.button == 5:
+                elif event.button in (5, 16):   # R1 or D-pad Right button
                     self._next_page()
-                elif event.button == 4:
+                elif event.button in (4, 15):   # L1 or D-pad Left button
                     self._prev_page()
                 elif event.button == lang_btn:
-                    next_lang()
+                    settings.cycle_language()
                     pygame.display.set_caption(t("app.window_title"))
 
             # ── Joystick hat (D-pad) ─────────────────────────────────────────
@@ -146,31 +157,35 @@ class MultiPageApp:
                 elif hat_x == -1:
                     self._prev_page()
 
+            # ── Joystick left stick X-axis (page switch with hysteresis) ─────
+            elif event.type == pygame.JOYAXISMOTION and event.axis == 0:
+                if event.value > 0.65 and not self._axis_x_active:
+                    self._axis_x_active = True
+                    self._next_page()
+                elif event.value < -0.65 and not self._axis_x_active:
+                    self._axis_x_active = True
+                    self._prev_page()
+                elif -0.30 <= event.value <= 0.30:
+                    self._axis_x_active = False
+
     # ── Page indicator (dots) ────────────────────────────────────────────────
 
     def _draw_page_indicator(self):
-        """Draw small dots at the bottom-centre showing current page."""
+        """Draw sleek pill/dot indicators at the bottom-centre showing current page."""
         n = len(self.pages)
         if n <= 1:
             return
 
-        dot_r   = 4
-        gap     = 14
-        total   = n * dot_r * 2 + (n - 1) * (gap - dot_r * 2)
-        start_x = (config.SCREEN_WIDTH - total) // 2 + dot_r
-        y       = config.SCREEN_HEIGHT - 12
+        y = config.SCREEN_HEIGHT - 13
+        items_w = [18 if i == self.current else 6 for i in range(n)]
+        gap = 8
+        total_w = sum(items_w) + gap * (n - 1)
+        x = (config.SCREEN_WIDTH - total_w) // 2
 
-        for i in range(n):
-            cx = start_x + i * gap
-            if i == self.current:
-                pygame.draw.circle(self.screen, config.COLORS["primary"], (cx, y), dot_r)
-            else:
-                pygame.draw.circle(self.screen, config.COLORS["muted"], (cx, y), dot_r, 1)
-
-        page = self.pages[self.current]
-        lbl = self._font_ind.render(page.name, True, config.COLORS["muted"])
-        self.screen.blit(lbl, ((config.SCREEN_WIDTH - lbl.get_width()) // 2,
-                               y - dot_r - lbl.get_height() - 2))
+        for i, w in enumerate(items_w):
+            col = SKY if i == self.current else BADGE_BD
+            pygame.draw.rect(self.screen, col, (x, y - 3, w, 6), border_radius=3)
+            x += w + gap
 
     # ── OEM Daily Startup / Connecting Screen ────────────────────────────────
 
@@ -215,8 +230,8 @@ class MultiPageApp:
         bg.blit(track, (cx - dim // 2, cy - dim // 2))
 
         # Inner subtle badge circle + crisp OBD-II / USB connector icon
-        gfxdraw.filled_circle(bg, cx, cy, 46, CARD)
-        gfxdraw.aacircle(bg, cx, cy, 46, BORDER)
+        gfxdraw.filled_circle(bg, cx, cy, 45, CARD)
+        gfxdraw.aacircle(bg, cx, cy, 45, BORDER)
 
         # Stylized trapezoidal OBD-II 16-pin connector silhouette
         trap = [
@@ -227,16 +242,15 @@ class MultiPageApp:
         ]
         gfxdraw.filled_polygon(bg, trap, BADGE_BG)
         gfxdraw.aapolygon(bg, trap, SKY)
-        # Two rows of 4 pin dots inside the OBD connector
         for row_y in (cy - 10, cy - 3):
             for col_i in range(4):
                 px = cx - 12 + col_i * 8
                 gfxdraw.filled_circle(bg, px, row_y, 1, TEAL)
 
-        self._blit_center(bg, self._font_badge.render(t("conn.obd_badge"), True, TXT_SUB), cx, cy + 20)
+        self._blit_center(bg, self._font_badge.render(t("conn.obd_badge"), True, TXT_SUB), cx, cy + 19)
 
         # Center Status Card
-        card_rect = pygame.Rect((W - 432) // 2, 276, 432, 102)
+        card_rect = pygame.Rect((W - 432) // 2, 264, 432, 98)
         pygame.draw.rect(bg, CARD, card_rect, border_radius=10)
         pygame.draw.rect(bg, BORDER, card_rect, 1, border_radius=10)
 
@@ -244,17 +258,17 @@ class MultiPageApp:
             bg,
             self._font_title.render(t("conn.title"), True, TXT_MAIN),
             W // 2,
-            304,
+            290,
         )
         self._blit_center(
             bg,
             self._font_sub.render(t("conn.subtitle"), True, TXT_SUB),
             W // 2,
-            330,
+            316,
         )
 
         # Progress bar inset well inside status card
-        bar_well = pygame.Rect((W - 340) // 2, 352, 340, 8)
+        bar_well = pygame.Rect((W - 340) // 2, 338, 340, 8)
         pygame.draw.rect(bg, CARD_DARK, bar_well, border_radius=4)
         pygame.draw.rect(bg, BORDER, bar_well, 1, border_radius=4)
 
@@ -274,14 +288,22 @@ class MultiPageApp:
         self._conn_status_pill = None
 
         for i, (lbl, val) in enumerate(pills):
-            r = pygame.Rect(start_x + i * (pill_w + gap), 396, pill_w, 62)
+            r = pygame.Rect(start_x + i * (pill_w + gap), 374, pill_w, 56)
             pygame.draw.rect(bg, CARD, r, border_radius=8)
             pygame.draw.rect(bg, BORDER, r, 1, border_radius=8)
-            bg.blit(self._font_pill_lbl.render(lbl, True, TXT_MUTED), (r.x + 14, r.y + 10))
+            bg.blit(self._font_pill_lbl.render(lbl, True, TXT_MUTED), (r.x + 14, r.y + 8))
             if val is not None:
-                bg.blit(self._font_pill_val.render(val, True, TXT_MAIN), (r.x + 14, r.y + 32))
+                bg.blit(self._font_pill_val.render(val, True, TXT_MAIN), (r.x + 14, r.y + 28))
             else:
                 self._conn_status_pill = r
+
+        # Navigation hint so user knows they can reach Web Server & Settings offline
+        self._blit_center(
+            bg,
+            self._font_hint.render(t("conn.hint_pages"), True, TXT_MUTED),
+            W // 2,
+            444,
+        )
 
         return bg
 
@@ -305,7 +327,7 @@ class MultiPageApp:
         gfxdraw.filled_circle(self.screen, dot_x, 24, 4, dot_col)
         gfxdraw.aacircle(self.screen, dot_x, 24, 4, dot_col)
 
-        if data and getattr(config, "SHOW_CONSOLE_BATTERY", True):
+        if data and settings.enabled("console_battery"):
             draw_phone_battery(
                 self.screen,
                 W - 24,
@@ -333,14 +355,14 @@ class MultiPageApp:
         track_x = (W - 336) // 2
         track_w = 336
         seg_w = 96
-        pos = (math.sin(t_sec * 2.4) + 1.0) * 0.5  # smooth ease-in-out 0..1
+        pos = (math.sin(t_sec * 2.4) + 1.0) * 0.5
         seg_x = int(track_x + pos * (track_w - seg_w))
-        pygame.draw.rect(self.screen, SKY, (seg_x, 353, seg_w, 6), border_radius=3)
+        pygame.draw.rect(self.screen, SKY, (seg_x, 339, seg_w, 6), border_radius=3)
 
         # 4. Dynamic "STATUS" bottom pill
         if self._conn_status_pill is not None:
             r = self._conn_status_pill
-            dx, dy = r.x + 18, r.y + 40
+            dx, dy = r.x + 18, r.y + 36
             if is_connected:
                 gfxdraw.filled_circle(self.screen, dx, dy, 4, GREEN_DOT)
                 gfxdraw.aacircle(self.screen, dx, dy, 4, GREEN_DOT)
@@ -350,7 +372,7 @@ class MultiPageApp:
                 gfxdraw.aacircle(self.screen, dx, dy, 4, AMBER if pulse_on else BADGE_BD)
                 dots = "." * ((int(t_sec * 2.0) % 3) + 1)
                 st_surf = self._font_pill_val.render(f"{t('conn.status_searching')}{dots}", True, AMBER_TXT)
-            self.screen.blit(st_surf, (r.x + 28, r.y + 32))
+            self.screen.blit(st_surf, (r.x + 28, r.y + 28))
 
     # ── Main loop ────────────────────────────────────────────────────────────
 
@@ -362,31 +384,32 @@ class MultiPageApp:
                 now = time.monotonic()
                 data = self.store.snapshot()
                 data.update(self.derived.update(data, now))
-                if getattr(config, "SHOW_CONSOLE_BATTERY", True):
+                if settings.enabled("console_battery"):
                     batt_pct, batt_chg = self.console_battery.read(now)
                     data["console_battery_pct"] = batt_pct
                     data["console_battery_charging"] = batt_chg
                 self.alarm.update(data)
 
-                self.screen.fill(config.COLORS["bg"])
-
-                if self.state == "CONNECTING":
+                if not self._ever_connected:
                     splash_done = (now - self._boot_at) >= self._MIN_SPLASH_SECS
                     if data.get("connected", False) and splash_done:
-                        self.state = "DASHBOARD"
-                    else:
-                        self._draw_connecting_screen(data)
+                        self._ever_connected = True
 
-                if self.state == "DASHBOARD":
+                self.screen.fill(config.COLORS["bg"])
+
+                if self._showing_connecting():
+                    self._draw_connecting_screen(data)
+                else:
                     page = self.pages[self.current]
                     page.update(data)
                     page.draw()
                     page.draw_chrome(data)
                     page.draw_alarms(self.alarm)
 
-                    self._draw_page_indicator()
+                self._draw_page_indicator()
 
                 pygame.display.flip()
                 self.clock.tick(config.FPS)
         finally:
+            self.web_server.stop()
             pygame.quit()

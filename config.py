@@ -4,7 +4,6 @@ FPS = 60
 FULLSCREEN = False   # True para sempre abrir em tela cheia (útil no R36S)
 EXIT_KEY   = 97    # pygame.K_a — botão A no R36S / tecla 'a' no PC
 SHOW_CONSOLE_BATTERY = True  # Exibe ícone + % da bateria do R36S no topo da tela
-LANGUAGE   = "en"         # Idioma: "pt-BR" (Português Brasileiro) ou "en" (English)
 LANGUAGE   = "pt-BR"         # Idioma: "pt-BR" (Português Brasileiro) ou "en" (English)
 
 MOCK_MODE = False    # True para testar sem adaptador OBD
@@ -35,11 +34,33 @@ COLORS = {
 }
 
 ALARM_SOUND  = False  # False para silenciar os beeps de alarme
-
-# --- Configurações de Logs (Telemetria CSV + Diagnóstico de Erros) ---
-LOG_ENABLED  = False  # False desabilita todos os logs (CSV e errors_*.txt); True habilita
+LOG_ENABLED  = True   # True habilita gravação de telemetria CSV e logs de diagnóstico
 LOG_DIR      = "logs"
 LOG_INTERVAL = 1.0    # segundos entre cada linha gravada no CSV
+
+# --- Configurações do Modo Webserver (Análise Diária & Exportação) ---
+WEB_HOST     = "0.0.0.0"  # "0.0.0.0" permite acesso via Wi-Fi local (celular / PC)
+WEB_PORT     = 8080       # Porta HTTP do servidor de análise de dados
+
+USER_SETTINGS_FILE = "user_settings.json"  # Salva alterações feitas na tela de Configurações
+
+# --- Funções / Sensores Habilitados por Padrão ---
+# Podem ser alterados aqui ou diretamente na tela de Configurações pelo controle do R36S
+FEATURES = {
+    "data_logging":    LOG_ENABLED,           # Gravação de telemetria CSV (logs/session_*.csv)
+    "turbo":           False,                 # Pressão de Turbo / Boost (False para motores aspirados)
+    "water_temp":      True,                  # Temperatura da Água (Arrefecimento)
+    "oil_temp":        True,                  # Temperatura do Óleo via OBD
+    "battery_voltage": True,                  # Tensão da Bateria / Alternador
+    "tps_load":        True,                  # Posição do Acelerador (TPS) e Carga do Motor
+    "fuel_level":      True,                  # Nível de Combustível (%)
+    "consumption":     True,                  # Consumo Instantâneo (km/l via MAF)
+    "zero_to_hundred": True,                  # Cronômetro de aceleração 0-100 km/h
+    "gear_indicator":  True,                  # Indicador de Marcha estimada (D1..D5)
+    "intake_temp":     True,                  # Temperatura do Ar de Admissão (ADM / IAT)
+    "console_battery": SHOW_CONSOLE_BATTERY,  # Indicador de bateria do R36S no topo
+    "alarm_sound":     ALARM_SOUND,           # Beeps sonoros de alerta
+}
 
 RPM_MAX      = 7000
 RPM_REDLINE  = 5500

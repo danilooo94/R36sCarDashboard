@@ -3,6 +3,7 @@ import struct
 import time
 import pygame
 import config
+import settings
 
 # ── Thresholds (must mirror widget color logic) ─────────────────────────────
 _TEMP_WARN   = 95
@@ -81,15 +82,15 @@ class AlarmManager:
         volt  = data.get("voltage",    0.0)
 
         self._levels = {
-            "oil_temp":   self._eval_temp(oil)      if oil   > 0 else 0,
-            "water_temp": self._eval_temp(water)    if water > 0 else 0,
-            "voltage":    self._eval_voltage(volt),
+            "oil_temp":   self._eval_temp(oil)      if (settings.enabled("oil_temp") and oil > 0) else 0,
+            "water_temp": self._eval_temp(water)    if (settings.enabled("water_temp") and water > 0) else 0,
+            "voltage":    self._eval_voltage(volt)  if settings.enabled("battery_voltage") else 0,
         }
 
         top = self.overall()
 
         # ── Sound ────────────────────────────────────────────────────────────
-        if top > 0 and config.ALARM_SOUND:
+        if top > 0 and settings.enabled("alarm_sound"):
             cooldown = _COOLDOWN_DANGER if top == 2 else _COOLDOWN_WARN
             now = time.monotonic()
             if now - self._last_sound >= cooldown:

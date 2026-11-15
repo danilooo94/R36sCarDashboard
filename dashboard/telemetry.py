@@ -10,6 +10,7 @@ import os
 import time
 
 import config
+import settings
 
 
 def fmt_time(seconds: float) -> str:
@@ -177,12 +178,13 @@ class ZeroToHundred:
 # ── Agregador ────────────────────────────────────────────────────────────────
 
 class DerivedTelemetry:
-    """Calcula marcha, 0-100, trip, consumo e boost a partir do snapshot OBD."""
+    """Calcula marcha, 0-100, trip, distância, vel. média, consumo e boost."""
 
     def __init__(self):
         self.gear = GearEstimator()
         self.zero100 = ZeroToHundred()
         self._trip_secs = 0.0
+        self._trip_km = 0.0
         self._last_now = None
         self._consumption = None     # km/l suavizado
 
@@ -194,34 +196,47 @@ class DerivedTelemetry:
         rpm   = float(data.get("rpm", 0) or 0)
         speed = float(data.get("speed", 0) or 0)
 
-        # Tempo de viagem: só conta com o motor ligado e o OBD conectado
+        # Tempo e distância de viagem: conta com o motor ligado e o OBD conectado
         if data.get("connected", False) and rpm >= config.TRIP_ENGINE_ON_RPM:
             self._trip_secs += dt
+            if speed > 0:
+                self._trip_km += (speed / 3600.0) * dt
+
+        avg_speed = (self._trip_km / (self._trip_secs / 3600.0)) if self._trip_secs >= 3.0 else speed
 
         # Consumo instantâneo (km/l) a partir do MAF, suavizado (~2 s)
-        maf = float(data.get("maf", 0) or 0)
-        if maf <= 0:
+        if settings.enabled("consumption"):
+            maf = float(data.get("maf", 0) or 0)
+            if maf <= 0:
+                self._consumption = None
+            elif speed >= 3.0:
+                liters_per_hour = maf * 3600.0 / (config.FUEL_AFR * config.FUEL_DENSITY_G_L)
+                instant = speed / liters_per_hour if liters_per_hour > 0 else None
+                if instant is not None:
+                    if self._consumption is None:
+                        self._consumption = instant
+                    else:
+                        alpha = 1.0 - math.exp(-dt / 2.0) if dt > 0 else 0.0
+                        self._consumption += alpha * (instant - self._consumption)
+        else:
             self._consumption = None
-        elif speed >= 3.0:
-            liters_per_hour = maf * 3600.0 / (config.FUEL_AFR * config.FUEL_DENSITY_G_L)
-            instant = speed / liters_per_hour if liters_per_hour > 0 else None
-            if instant is not None:
-                if self._consumption is None:
-                    self._consumption = instant
-                else:
-                    alpha = 1.0 - math.exp(-dt / 2.0) if dt > 0 else 0.0
-                    self._consumption += alpha * (instant - self._consumption)
 
-        # Boost: MAP absoluto (kPa) menos a pressão atmosférica
-        map_kpa = float(data.get("map_kpa", 0) or 0)
-        boost_bar = max(0.0, (map_kpa - config.BAROMETRIC_KPA) / 100.0) if map_kpa > 0 else 0.0
+        # Boost: MAP absoluto (kPa) menos a pressão atmosférica (apenas se turbo habilitado)
+        if settings.enabled("turbo"):
+            map_kpa = float(data.get("map_kpa", 0) or 0)
+            boost_bar = max(0.0, (map_kpa - config.BAROMETRIC_KPA) / 100.0) if map_kpa > 0 else 0.0
+        else:
+            boost_bar = 0.0
 
-        gear = self.gear.update(rpm, speed, now)
-        self.zero100.update(speed, now)
+        gear = self.gear.update(rpm, speed, now) if settings.enabled("gear_indicator") else 0
+        if settings.enabled("zero_to_hundred"):
+            self.zero100.update(speed, now)
 
         return {
             "gear":             gear,
             "trip_seconds":     self._trip_secs,
+            "trip_km":          self._trip_km,
+            "avg_speed_kmh":    avg_speed,
             "consumption_kml":  self._consumption,
             "boost_bar":        boost_bar,
             "boost_psi":        boost_bar * 14.5038,

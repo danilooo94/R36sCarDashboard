@@ -1,8 +1,8 @@
 """Modern OEM Daily / Eco & Trip Computer dashboard page (640x480).
 
 Pre-renders static background cards, ambient glow, and supersampled ring tracks
-once at startup, and draws anti-aliased dynamic arcs, sparklines, and cached
-typography at 60 FPS.
+once at startup (and whenever language or feature flags change), drawing
+anti-aliased dynamic arcs, sparklines, and cached typography at 60 FPS.
 """
 from collections import deque
 import math
@@ -12,6 +12,7 @@ import pygame
 from pygame import gfxdraw
 
 import config
+import settings
 from dashboard.console_battery import draw_phone_battery
 from dashboard.page_base import Page
 from dashboard.telemetry import fmt_hms
@@ -41,9 +42,9 @@ AMBER_TXT  = (251, 191, 36)   # #fbbf24
 RED        = (239, 68,  68)   # #ef4444
 
 # Ring geometry (270° sweep starting at 135° screen-space: bottom-left -> top -> bottom-right)
-_LEFT_CENTER  = (132, 195)
-_RIGHT_CENTER = (508, 195)
-_RING_R       = 92
+_LEFT_CENTER  = (132, 192)
+_RIGHT_CENTER = (508, 192)
+_RING_R       = 90
 _RING_THICK   = 14
 _START_DEG    = 135.0
 _SWEEP_DEG    = 270.0
@@ -55,9 +56,9 @@ def _build_radial_glow(size, center, radius, color, max_alpha=32):
     cx, cy = center
     steps = 36
     for i in range(steps, 0, -1):
-        t = i / steps
-        r = int(radius * t)
-        alpha = int(max_alpha * ((1.0 - t) ** 1.8))
+        frac = i / steps
+        r = int(radius * frac)
+        alpha = int(max_alpha * ((1.0 - frac) ** 1.8))
         if alpha > 0 and r > 0:
             pygame.draw.circle(surf, (*color, alpha), (cx, cy), r)
     return surf
@@ -86,7 +87,6 @@ def _draw_thick_arc(surface, cx, cy, radius, thickness, start_deg, sweep_deg, co
         gfxdraw.filled_polygon(surface, poly, color)
         gfxdraw.aapolygon(surface, poly, color)
 
-    # Rounded endcaps at start and end angles
     cap_r = int(round(half_t))
     for deg in (start_deg, start_deg + sweep_deg):
         ang = math.radians(deg)
@@ -144,12 +144,15 @@ class DailyCockpitPage(Page):
         self._fonts = {}
         self._text_cache = {}
         self._lang = get_lang()
+        self._settings_rev = settings.revision()
         self._hdr_half_w = 54
+        self._active_pills = []
 
-        # Smoothed needle/arc state & sparkline history
+        # Smoothed needle/arc state & rolling sparkline histories
         self._rpm_disp = 0.0
         self._speed_disp = 0.0
         self._econ_hist = deque([0.0] * 48, maxlen=48)
+        self._speed_hist = deque([0.0] * 48, maxlen=48)
         self._last_hist_t = 0.0
         self._data = {}
 
@@ -165,7 +168,7 @@ class DailyCockpitPage(Page):
         f = self._fonts.get(key)
         if f is None:
             families = (
-                "consolas,dejavusansmono, liberationmono,monospace"
+                "consolas,dejavusansmono,liberationmono,monospace"
                 if mono
                 else "segoeui,dejavusans,liberationsans,arial,sans-serif"
             )
@@ -219,8 +222,7 @@ class DailyCockpitPage(Page):
             pygame.draw.aaline(bg, col, p1, p2)
 
         # Subtle inner scale ticks on Speed ring (every 40 km/h)
-        step_spd = 40
-        for s in range(0, int(config.SPEED_MAX) + 1, step_spd):
+        for s in range(0, int(config.SPEED_MAX) + 1, 40):
             frac = s / config.SPEED_MAX
             ang = math.radians(_START_DEG + _SWEEP_DEG * frac)
             r1, r2 = _RING_R - 14, _RING_R - 19
@@ -228,45 +230,68 @@ class DailyCockpitPage(Page):
             p2 = (int(_RIGHT_CENTER[0] + r2 * math.cos(ang)), int(_RIGHT_CENTER[1] + r2 * math.sin(ang)))
             pygame.draw.aaline(bg, TXT_MUTED, p1, p2)
 
-        # Static ring unit labels & bottom badge frames
-        self._blit_center(bg, self._txt(t("hud.rpm_unit"), 12, TXT_SUB), _LEFT_CENTER[0], _LEFT_CENTER[1] + 32)
-        self._blit_center(bg, self._txt(t("hud.speed_unit"), 12, TXT_SUB), _RIGHT_CENTER[0], _RIGHT_CENTER[1] + 32)
+        # Static ring unit labels & conditional bottom badge frames
+        self._blit_center(bg, self._txt(t("hud.rpm_unit"), 12, TXT_SUB), _LEFT_CENTER[0], _LEFT_CENTER[1] + 31)
+        self._blit_center(bg, self._txt(t("hud.speed_unit"), 12, TXT_SUB), _RIGHT_CENTER[0], _RIGHT_CENTER[1] + 31)
 
-        for cx, cy, bw in ((_LEFT_CENTER[0], _LEFT_CENTER[1], 56), (_RIGHT_CENTER[0], _RIGHT_CENTER[1], 66)):
-            badge_rect = pygame.Rect(cx - bw // 2, cy + 48, bw, 28)
+        if settings.enabled("gear_indicator"):
+            badge_rect = pygame.Rect(_LEFT_CENTER[0] - 28, _LEFT_CENTER[1] + 47, 56, 27)
             pygame.draw.rect(bg, BADGE_BG, badge_rect, border_radius=6)
             pygame.draw.rect(bg, BADGE_BD, badge_rect, 1, border_radius=6)
 
-        # Center Economy & Trip Computer Card
-        card_rect = pygame.Rect(238, 88, 164, 224)
+        if settings.enabled("fuel_level"):
+            badge_rect = pygame.Rect(_RIGHT_CENTER[0] - 33, _RIGHT_CENTER[1] + 47, 66, 27)
+            pygame.draw.rect(bg, BADGE_BG, badge_rect, border_radius=6)
+            pygame.draw.rect(bg, BADGE_BD, badge_rect, 1, border_radius=6)
+
+        # Center Economy / Trip Computer Card
+        card_rect = pygame.Rect(238, 86, 164, 222)
         pygame.draw.rect(bg, CARD, card_rect, border_radius=10)
         pygame.draw.rect(bg, BORDER, card_rect, 1, border_radius=10)
-        self._blit_center(bg, self._txt(t("hud.economy_title"), 11, TXT_SUB), W // 2, 108)
-        self._blit_center(bg, self._txt(t("hud.economy_unit"), 12, TXT_MUTED, bold=False), W // 2, 168)
+
+        if settings.enabled("consumption"):
+            c_title = t("hud.economy_title")
+            c_unit = t("hud.economy_unit")
+        else:
+            c_title = t("hud.avg_speed_title")
+            c_unit = t("hud.avg_speed_unit")
+
+        self._blit_center(bg, self._txt(c_title, 11, TXT_SUB), W // 2, 106)
+        self._blit_center(bg, self._txt(c_unit, 12, TXT_MUTED, bold=False), W // 2, 166)
 
         # Sparkline inset box + subtle horizontal guide lines
-        spark_rect = pygame.Rect(252, 188, 136, 72)
+        spark_rect = pygame.Rect(252, 186, 136, 72)
         pygame.draw.rect(bg, CARD_DARK, spark_rect, border_radius=6)
         for gy in (spark_rect.y + 24, spark_rect.y + 48):
             pygame.draw.line(bg, (20, 29, 42), (spark_rect.x + 4, gy), (spark_rect.right - 4, gy), 1)
         pygame.draw.rect(bg, BORDER, spark_rect, 1, border_radius=6)
 
-        # Bottom 4 Health Pill Cards (static base)
-        pill_labels = (
-            t("hud.pill_water"),
-            t("hud.pill_oil"),
-            t("hud.pill_battery"),
-            t("hud.pill_tps_boost"),
-        )
-        pill_w = (592 - 12 * 3) // 4   # 139 px each
-        self._pill_rects = []
-        for i, lbl in enumerate(pill_labels):
-            x = 24 + i * (pill_w + 12)
-            r = pygame.Rect(x, 356, pill_w, 98)
-            self._pill_rects.append(r)
-            pygame.draw.rect(bg, CARD, r, border_radius=8)
-            pygame.draw.rect(bg, BORDER, r, 1, border_radius=8)
-            bg.blit(self._txt(lbl, 11, TXT_SUB), (x + 26, 371))
+        # Bottom Health Pill Cards (dynamically sized for enabled sensors)
+        candidates = []
+        if settings.enabled("water_temp"):
+            candidates.append(("water_temp", t("hud.pill_water")))
+        if settings.enabled("oil_temp"):
+            candidates.append(("oil_temp", t("hud.pill_oil")))
+        if settings.enabled("battery_voltage"):
+            candidates.append(("battery_voltage", t("hud.pill_battery")))
+        if settings.enabled("tps_load"):
+            tps_lbl = t("hud.pill_tps_boost") if settings.enabled("turbo") else t("hud.pill_tps_load")
+            candidates.append(("tps_load", tps_lbl))
+
+        self._active_pills = []
+        n = len(candidates)
+        if n > 0:
+            gap = 12
+            pill_w = 280 if n == 1 else (592 - gap * (n - 1)) // n
+            total_w = pill_w * n + gap * (n - 1)
+            start_x = (W - total_w) // 2
+            for i, (key, lbl) in enumerate(candidates):
+                x = start_x + i * (pill_w + gap)
+                r = pygame.Rect(x, 344, pill_w, 92)
+                self._active_pills.append((key, r))
+                pygame.draw.rect(bg, CARD, r, border_radius=8)
+                pygame.draw.rect(bg, BORDER, r, 1, border_radius=8)
+                bg.blit(self._txt(lbl, 11, TXT_SUB), (x + 26, 358))
 
     # ── Sensor Evaluation Helpers ────────────────────────────────────────────
 
@@ -299,10 +324,14 @@ class DailyCockpitPage(Page):
             self._last_hist_t = now
             kml = data.get("consumption_kml")
             self._econ_hist.append(float(kml) if kml is not None else 0.0)
+            self._speed_hist.append(float(data.get("speed", 0) or 0))
 
     def draw(self):
-        if get_lang() != self._lang:
-            self._lang = get_lang()
+        cur_lang = get_lang()
+        cur_rev = settings.revision()
+        if cur_lang != self._lang or cur_rev != self._settings_rev:
+            self._lang = cur_lang
+            self._settings_rev = cur_rev
             self._text_cache.clear()
             self._build_static_bg()
 
@@ -320,17 +349,20 @@ class DailyCockpitPage(Page):
         oil       = float(d.get("oil_temp", 0) or 0)
         volt      = float(d.get("voltage", 0) or 0)
         tps       = float(d.get("throttle", 0) or 0)
+        load      = float(d.get("load", 0) or 0)
         boost     = float(d.get("boost_bar", 0) or 0)
         iat       = float(d.get("intake_temp", 0) or 0)
         trip_s    = float(d.get("trip_seconds", 0) or 0)
+        trip_km   = float(d.get("trip_km", 0) or 0)
+        avg_spd   = float(d.get("avg_speed_kmh", 0) or 0)
         kml       = d.get("consumption_kml")
         connected = bool(d.get("connected", False))
         obd_port  = str(d.get("obd_port", "") or "").replace("/dev/", "")
 
-        # Danger ambient glow overlay if any critical threshold is exceeded
-        w_st = self._temp_state(water)
-        o_st = self._temp_state(oil)
-        v_st = self._volt_state(volt)
+        # Danger ambient glow overlay (only for enabled sensors)
+        w_st = self._temp_state(water) if settings.enabled("water_temp") else 0
+        o_st = self._temp_state(oil) if settings.enabled("oil_temp") else 0
+        v_st = self._volt_state(volt) if settings.enabled("battery_voltage") else 0
         if max(w_st, o_st, v_st) == 2 and blink:
             cv.blit(self._danger_glow, (0, 0))
 
@@ -344,25 +376,30 @@ class DailyCockpitPage(Page):
         if connected and obd_port:
             cv.blit(self._txt(obd_port, 11, TXT_MUTED, mono=True), (W // 2 + self._hdr_half_w + 10, 18))
 
-        iat_right_x = W - 24
-        if getattr(config, "SHOW_CONSOLE_BATTERY", True):
+        show_batt = settings.enabled("console_battery")
+        show_iat  = settings.enabled("intake_temp")
+        right_cursor = W - 24
+
+        if show_batt:
             batt_left_x = draw_phone_battery(
                 cv,
-                W - 24,
+                right_cursor,
                 24,
                 d.get("console_battery_pct"),
                 bool(d.get("console_battery_charging", False)),
                 self._font(13, mono=True, bold=True),
             )
-            sep_x = batt_left_x - 10
-            pygame.draw.line(cv, BORDER, (sep_x, 17), (sep_x, 31), 1)
-            iat_right_x = sep_x - 10
+            right_cursor = batt_left_x - 10
+            if show_iat:
+                pygame.draw.line(cv, BORDER, (right_cursor, 17), (right_cursor, 31), 1)
+                right_cursor -= 10
 
-        iat_str = t("hud.iat_value", temp=f"{iat:.0f}") if iat > 0 else t("hud.iat_empty")
-        iat_surf = self._txt(iat_str, 13, TXT_SUB, mono=True)
-        cv.blit(iat_surf, (iat_right_x - iat_surf.get_width(), 17))
+        if show_iat:
+            iat_str = t("hud.iat_value", temp=f"{iat:.0f}") if iat > 0 else t("hud.iat_empty")
+            iat_surf = self._txt(iat_str, 13, TXT_SUB, mono=True)
+            cv.blit(iat_surf, (right_cursor - iat_surf.get_width(), 17))
 
-        # 2. Left Smooth Ring: RPM + Gear
+        # 2. Left Smooth Ring: RPM + Optional Gear Badge
         self._rpm_disp += (rpm - self._rpm_disp) * 0.28
         rpm_frac = max(0.0, min(1.0, self._rpm_disp / max(1.0, float(config.RPM_MAX))))
         if rpm >= config.RPM_REDLINE:
@@ -380,13 +417,14 @@ class DailyCockpitPage(Page):
             cv, self._txt(f"{rpm / 1000.0:.1f}", 44, TXT_MAIN),
             _LEFT_CENTER[0], _LEFT_CENTER[1] - 4
         )
-        gear_lbl = t("hud.gear_neutral") if gear <= 0 else t("hud.gear_engaged", gear=gear)
-        self._blit_center(
-            cv, self._txt(gear_lbl, 16, rpm_col, mono=True),
-            _LEFT_CENTER[0], _LEFT_CENTER[1] + 62
-        )
+        if settings.enabled("gear_indicator"):
+            gear_lbl = t("hud.gear_neutral") if gear <= 0 else t("hud.gear_engaged", gear=gear)
+            self._blit_center(
+                cv, self._txt(gear_lbl, 16, rpm_col, mono=True),
+                _LEFT_CENTER[0], _LEFT_CENTER[1] + 60
+            )
 
-        # 3. Right Smooth Ring: Speed + Fuel %
+        # 3. Right Smooth Ring: Speed + Optional Fuel % Badge
         self._speed_disp += (speed - self._speed_disp) * 0.28
         spd_frac = max(0.0, min(1.0, self._speed_disp / max(1.0, float(config.SPEED_MAX))))
         _draw_thick_arc(
@@ -397,52 +435,64 @@ class DailyCockpitPage(Page):
             cv, self._txt(f"{int(round(speed))}", 44, TXT_MAIN),
             _RIGHT_CENTER[0], _RIGHT_CENTER[1] - 4
         )
-        fuel_col = RED if (0 < fuel < 10) else (AMBER if (0 < fuel < 20) else TEAL)
-        fuel_str = f"{int(round(fuel))}%" if fuel > 0 else "--%"
-        self._blit_center(
-            cv, self._txt(fuel_str, 15, fuel_col, mono=True),
-            _RIGHT_CENTER[0], _RIGHT_CENTER[1] + 62
-        )
+        if settings.enabled("fuel_level"):
+            fuel_col = RED if (0 < fuel < 10) else (AMBER if (0 < fuel < 20) else TEAL)
+            fuel_str = f"{int(round(fuel))}%" if fuel > 0 else "--%"
+            self._blit_center(
+                cv, self._txt(fuel_str, 15, fuel_col, mono=True),
+                _RIGHT_CENTER[0], _RIGHT_CENTER[1] + 60
+            )
 
-        # 4. Center Computer Card: Instant Economy + Sparkline + 0-100
-        if kml is None or kml <= 0:
-            kml_str, kml_col = "--.-", TXT_MUTED
+        # 4. Center Computer Card: Consumption (or Avg Speed) + Sparkline + 0-100 (or Distance)
+        if settings.enabled("consumption"):
+            if kml is None or kml <= 0:
+                center_str, center_col = "--.-", TXT_MUTED
+            else:
+                shown_kml = min(99.9, float(kml))
+                center_str = f"{shown_kml:.1f}"
+                center_col = EMERALD if shown_kml >= 10.0 else (AMBER_TXT if shown_kml >= 6.0 else RED)
+            self._blit_center(cv, self._txt(center_str, 34, center_col), W // 2, 138)
+            self._draw_sparkline(cv, self._econ_hist, max_scale=22.0, color=EMERALD)
         else:
-            shown_kml = min(99.9, float(kml))
-            kml_str = f"{shown_kml:.1f}"
-            kml_col = EMERALD if shown_kml >= 10.0 else (AMBER_TXT if shown_kml >= 6.0 else RED)
+            spd_str = f"{min(999.0, avg_spd):.0f}"
+            self._blit_center(cv, self._txt(spd_str, 34, SKY), W // 2, 138)
+            self._draw_sparkline(cv, self._speed_hist, max_scale=float(config.SPEED_MAX), color=SKY)
 
-        self._blit_center(cv, self._txt(kml_str, 34, kml_col), W // 2, 140)
-        self._draw_sparkline(cv)
+        if settings.enabled("zero_to_hundred"):
+            z_state = d.get("zero100_state", "WAIT_STOP")
+            z_time = float(d.get("zero100_time", 0) or 0)
+            z_best = d.get("zero100_best")
+            z_last = d.get("zero100_last")
 
-        # 0-100 footer line
-        z_state = d.get("zero100_state", "WAIT_STOP")
-        z_time = float(d.get("zero100_time", 0) or 0)
-        z_best = d.get("zero100_best")
-        z_last = d.get("zero100_last")
-
-        if z_state == "RUNNING":
-            z_txt, z_col = t("hud.zero100_run", time=f"{z_time:.1f}"), AMBER_TXT
-        elif z_last is not None:
-            z_txt, z_col = t("hud.zero100_run", time=f"{z_last:.1f}"), TXT_SUB
-        elif z_best is not None:
-            z_txt, z_col = t("hud.zero100_best", time=f"{z_best:.1f}"), TXT_SUB
+            if z_state == "RUNNING":
+                z_txt, z_col = t("hud.zero100_run", time=f"{z_time:.1f}"), AMBER_TXT
+            elif z_last is not None:
+                z_txt, z_col = t("hud.zero100_run", time=f"{z_last:.1f}"), TXT_SUB
+            elif z_best is not None:
+                z_txt, z_col = t("hud.zero100_best", time=f"{z_best:.1f}"), TXT_SUB
+            else:
+                z_txt = t("hud.zero100_ready") if z_state == "READY" else t("hud.zero100_idle")
+                z_col = TXT_MUTED
         else:
-            z_txt = t("hud.zero100_ready") if z_state == "READY" else t("hud.zero100_idle")
-            z_col = TXT_MUTED
+            z_txt = t("hud.trip_dist", km=f"{trip_km:.1f}")
+            z_col = TXT_SUB
 
-        self._blit_center(cv, self._txt(z_txt, 12, z_col, mono=True), W // 2, 286)
+        self._blit_center(cv, self._txt(z_txt, 12, z_col, mono=True), W // 2, 283)
 
-        # 5. Bottom 4 Health Status Pills
-        b_st = 1 if boost > config.BOOST_MAX_BAR * 0.85 else 0
-        pills_data = (
-            (f"{water:.0f}°C" if water > 0 else "--°C", w_st),
-            (f"{oil:.0f}°C" if oil > 0 else "--°C", o_st),
-            (f"{volt:.1f}V" if volt > 0 else "--.-V", v_st),
-            (f"{tps:.0f}% · {boost:.1f}b", b_st),
-        )
+        # 5. Bottom Health Status Pills (only enabled cards)
+        has_turbo = settings.enabled("turbo")
+        b_st = 1 if (has_turbo and boost > config.BOOST_MAX_BAR * 0.85) else 0
+        tps_val = f"{tps:.0f}% · {boost:.1f}b" if has_turbo else f"{tps:.0f}% · {load:.0f}%"
 
-        for rect, (val_str, st) in zip(self._pill_rects, pills_data):
+        values_map = {
+            "water_temp":      (f"{water:.0f}°C" if water > 0 else "--°C", w_st),
+            "oil_temp":        (f"{oil:.0f}°C" if oil > 0 else "--°C", o_st),
+            "battery_voltage": (f"{volt:.1f}V" if volt > 0 else "--.-V", v_st),
+            "tps_load":        (tps_val, b_st),
+        }
+
+        for key, rect in self._active_pills:
+            val_str, st = values_map[key]
             if st == 2:
                 bd_col = RED if blink else BADGE_BD
                 dot_c = RED
@@ -456,32 +506,33 @@ class DailyCockpitPage(Page):
                 dot_c = GREEN_DOT
                 val_c = TXT_MAIN
 
-            dx, dy = rect.x + 15, rect.y + 22
+            dx, dy = rect.x + 15, rect.y + 20
             gfxdraw.filled_circle(cv, dx, dy, 4, dot_c)
             gfxdraw.aacircle(cv, dx, dy, 4, dot_c)
-            cv.blit(self._txt(val_str, 20, val_c, mono=True), (rect.x + 14, rect.y + 52))
+            cv.blit(self._txt(val_str, 20, val_c, mono=True), (rect.x + 14, rect.y + 48))
 
         if not self._direct:
             pygame.transform.smoothscale(cv, self.screen.get_size(), self.screen)
 
-    def _draw_sparkline(self, cv):
-        gx, gy, gw, gh = 252, 188, 136, 72
+    @staticmethod
+    def _draw_sparkline(cv, history, max_scale: float, color: tuple):
+        gx, gy, gw, gh = 252, 186, 136, 72
         pts = []
-        n = len(self._econ_hist)
-        for idx, val in enumerate(self._econ_hist):
+        n = len(history)
+        scale = max(1.0, max_scale)
+        for idx, val in enumerate(history):
             px = gx + 6 + (idx / max(1, n - 1)) * (gw - 12)
-            clamped = max(0.0, min(22.0, val))
-            py = gy + gh - 8 - (clamped / 22.0) * (gh - 16)
+            clamped = max(0.0, min(scale, val))
+            py = gy + gh - 8 - (clamped / scale) * (gh - 16)
             pts.append((px, py))
 
         if len(pts) >= 2:
-            # Soft translucent fill under curve
             fill_surf = pygame.Surface((gw - 12, gh - 12), pygame.SRCALPHA)
             local_pts = [(int(px - (gx + 6)), int(py - (gy + 6))) for px, py in pts]
             poly = [(0, gh - 14)] + local_pts + [(gw - 13, gh - 14)]
-            gfxdraw.filled_polygon(fill_surf, poly, (*EMERALD, 34))
+            gfxdraw.filled_polygon(fill_surf, poly, (*color, 34))
             cv.blit(fill_surf, (gx + 6, gy + 6))
-            pygame.draw.aalines(cv, EMERALD, False, pts)
+            pygame.draw.aalines(cv, color, False, pts)
 
     def draw_alarms(self, alarm):
         if not alarm.blink_on:

@@ -111,14 +111,29 @@ All UI labels (both pre-rendered static backgrounds and per-frame dynamic text) 
 - **Configuration & Live Switching**: set `LANGUAGE = "pt-BR"` or `"en"` in `config.py`, or toggle live at runtime with the `L` key on desktop / `Y` button (`LANG_BUTTON = 3`) on the R36S gamepad — `MultiPageApp` and `DailyCockpitPage` automatically rebuild their static surfaces and clear text caches on the next frame.
 - **Extensibility**: adding a new language only requires creating a dictionary module in `i18n/locales/` and registering it in `i18n/locales/__init__.py`.
 
+### 6. Modular Feature Toggles & In-App Settings (`settings.py` & `dashboard/page_settings.py`)
+
+Vehicles vary widely in supported OBD-II PIDs and hardware (for instance, naturally aspirated engines without turbochargers, or ECUs without oil temperature / MAF sensors). Every sensor and derived widget can be enabled or disabled:
+- **Defaults in `config.py`**: configure the `FEATURES` dictionary (`turbo` defaults to `False` for naturally aspirated engines).
+- **Interactive R36S Settings Screen (`SettingsPage`)**: press D-pad Left/Right or `L1`/`R1` (or Left/Right arrows on desktop) to open the **Settings** page, use Up/Down to select any sensor/feature or language, and press `A`/`B` (`Enter`/`Space`) to toggle. Changes are saved automatically to `user_settings.json` (git-ignored) and can be reset back to `config.py` defaults anytime.
+- **Zero wasted OBD bandwidth**: `OBDReader` skips polling disabled PIDs dynamically, increasing refresh rates for active gauges, while `DailyCockpitPage` reflows its cards automatically (for example, showing `TPS / LOAD` instead of `TPS / BOOST` when `turbo` is disabled, or expanding remaining bottom cards evenly when `oil_temp` is disabled).
+
+### 7. Embedded Web Analytics Server & Daily Slice Exports (`web/` & `dashboard/page_webserver.py`)
+
+Collected CSV telemetry in `logs/session_*.csv` can be analyzed directly from any phone or computer browser on the local network using zero external Python dependencies (`ThreadingHTTPServer`):
+- **In-App R36S Mode (`WebServerPage`)**: press Left/Right (even while offline from the vehicle on the `CONNECTING` screen) to reach the **Web Server** page, press `A`/`Enter` to start or stop the HTTP server, and open the displayed LAN URL (e.g. `http://192.168.1.x:8080`).
+- **Headless CLI Mode**: run `python main.py --web [--port 8080]` to start the analytics server without opening a Pygame window.
+- **Daily Slicing & Downloads**: aggregates sessions by calendar date (`YYYY-MM-DD`) — including multi-hour drives crossing midnight — computing daily distance, engine-on time, peak/moving-average speed, RPM, thermal peaks, battery min/max, and interactive multi-channel HTML5 Canvas charts, plus one-click downloads for consolidated daily CSVs (`daily_YYYY-MM-DD.csv`), daily ZIP bundles, JSON reports, raw session CSVs, and full backups.
+
 ---
 
 ## Project Structure
 
 ```text
 .
-├── config.py                  # Display, language, USB serial, thresholds, and telemetry constants
-├── main.py                    # Unified entry point with global exception logging
+├── config.py                  # Display, language, default FEATURES, USB serial & web port
+├── settings.py                # Thread-safe runtime feature flags & user_settings.json persistence
+├── main.py                    # Unified entry point (GUI cockpit + `--web` headless server)
 ├── app_log.py                 # Rotating session diagnostic/error logger (logs/errors_*.txt)
 ├── start.sh                   # Armbian / R36S launch script (KMS/DRM or X11 + dialout setup)
 ├── install_autostart.sh       # Systemd service installer for automatic boot into TTY1
@@ -126,14 +141,20 @@ All UI labels (both pre-rendered static backgrounds and per-frame dynamic text) 
 │   ├── __init__.py            # Translation lookup t(), get_lang(), set_lang(), next_lang()
 │   └── locales/               # Locale string catalogs (pt_br.py, en.py)
 ├── obd/
-│   ├── reader.py              # USB serial auto-discovery, tiered OBD-II polling & EMA filter
+│   ├── reader.py              # USB serial auto-discovery, dynamic PID polling & EMA filter
 │   ├── mock.py                # Synthetic sensor generator for offline development (MOCK_MODE)
 │   ├── store.py               # Thread-safe DataStore shared between threads
-│   └── logger.py              # Background CSV session recorder (logs/session_*.csv)
+│   └── logger.py              # Live-toggleable CSV session recorder with daily rollover
+├── web/
+│   ├── analytics.py           # CSV session indexer, daily slicer, KPI math & CSV/JSON/ZIP exporter
+│   ├── server.py              # Embedded ThreadingHTTPServer & LAN IPv4 discovery
+│   └── ui_template.py         # Offline-capable OEM Daily Web Analytics SPA (pt-BR / en)
 └── dashboard/
-    ├── multi_app.py           # 60 FPS state machine, input router, and page host
-    ├── page_base.py           # Abstract Page lifecycle (update, draw, chrome, alarms)
-    ├── page_daily.py          # OEM Daily / Eco & Trip Computer HUD (640x480)
+    ├── multi_app.py           # 60 FPS state machine, input router, and page switcher
+    ├── page_base.py           # Abstract Page lifecycle (handle_event, update, draw, alarms)
+    ├── page_daily.py          # Adaptive OEM Daily / Eco & Trip Computer HUD (640x480)
+    ├── page_webserver.py      # Gamepad/keyboard Web Analytics Server control screen
+    ├── page_settings.py       # Gamepad/keyboard Settings menu for toggling features live
     ├── console_battery.py     # R36S sysfs / OS battery reader & smartphone-style badge
     ├── telemetry.py           # GearEstimator, ZeroToHundred, Boost, Trip & Fuel math
     └── alarm.py               # Threshold evaluator, blink timer & procedural audio beeps
@@ -170,6 +191,11 @@ Key settings in `config.py`:
 **Desktop (Windows / Linux):**
 ```bash
 python main.py
+```
+
+**Headless Web Analytics Server (analyze daily slices & download CSV/ZIPs):**
+```bash
+python main.py --web --port 8080
 ```
 
 **R36S / Armbian (KMS/DRM direct framebuffer):**

@@ -4,8 +4,9 @@ import sys
 from datetime import datetime
 
 import config
+import settings
 
-_ENABLED = bool(getattr(config, "LOG_ENABLED", True))
+_ENABLED = settings.enabled("data_logging")
 
 _LOG_FILE = (
     os.path.join(

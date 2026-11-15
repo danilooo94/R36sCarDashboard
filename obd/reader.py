@@ -6,6 +6,7 @@ import serial
 import serial.tools.list_ports
 import config
 import app_log
+import settings
 from obdii import Connection, commands
 
 # Known USB VID/PID combos used on OBD-II / ELM327 / USB-Serial adapters
@@ -166,16 +167,34 @@ class OBDReader(threading.Thread):
 
                 cycle = 0
                 while not self._stop.is_set():
-                    # 1. Alta prioridade: RPM e Velocidade consultados em TODOS os ciclos
-                    cmds_to_query = list(_FAST_COMMANDS)
+                    # 1. Alta prioridade: RPM e Velocidade sempre; TPS e MAP se habilitados
+                    cmds_to_query = [
+                        ("rpm",   commands["ENGINE_SPEED"]),
+                        ("speed", commands["VEHICLE_SPEED"]),
+                    ]
+                    if settings.enabled("tps_load"):
+                        cmds_to_query.append(("throttle", commands["THROTTLE_POSITION"]))
+                    if settings.enabled("turbo"):
+                        cmds_to_query.append(("map_kpa", commands["INTAKE_MAP"]))
 
-                    # 2. Média prioridade: Temperatura e Bateria a cada 8 ciclos (~1s)
+                    # 2. Média prioridade: a cada 8 ciclos (~1s), apenas sensores habilitados
                     if cycle % 8 == 0:
-                        cmds_to_query.extend(_MEDIUM_COMMANDS)
+                        if settings.enabled("water_temp"):
+                            cmds_to_query.append(("water_temp", commands["ENGINE_COOLANT_TEMP"]))
+                        if settings.enabled("oil_temp"):
+                            cmds_to_query.append(("oil_temp", commands["ENGINE_OIL_TEMP"]))
+                        if settings.enabled("battery_voltage"):
+                            cmds_to_query.append(("voltage", commands["VEHICLE_VOLTAGE"]))
+                        if settings.enabled("tps_load"):
+                            cmds_to_query.append(("load", commands["ENGINE_LOAD"]))
+                        if settings.enabled("intake_temp"):
+                            cmds_to_query.append(("intake_temp", commands["INTAKE_AIR_TEMP"]))
+                        if settings.enabled("consumption"):
+                            cmds_to_query.append(("maf", commands["MAF_RATE"]))
 
                     # 3. Baixa prioridade: Nível de combustível a cada 40 ciclos (~5s)
-                    if cycle % 40 == 0:
-                        cmds_to_query.extend(_SLOW_COMMANDS)
+                    if cycle % 40 == 0 and settings.enabled("fuel_level"):
+                        cmds_to_query.append(("fuel", commands["FUEL_LEVEL"]))
 
                     cycle = (cycle + 1) % 1000
 

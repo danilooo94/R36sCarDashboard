@@ -18,6 +18,10 @@ class Page:
 
     # ── Widget lifecycle ─────────────────────────────────────────────────────
 
+    def handle_event(self, event) -> bool:
+        """Optional per-page event handler. Return True if event was consumed."""
+        return False
+
     def update(self, data: dict):
         """Pull new sensor values into every widget."""
         for w in self.widgets:
