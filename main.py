@@ -8,8 +8,9 @@ from dashboard.multi_app import MultiPageApp
 
 
 def main():
-    app_log.install_excepthook()
-    app_log.info(f"=== sessão iniciada — log de erros: {app_log.path} ===")
+    if config.LOG_ENABLED:
+        app_log.install_excepthook()
+        app_log.info(f"=== sessão iniciada — log de erros: {app_log.path} ===")
 
     store  = DataStore()
     reader = MockReader(store) if config.MOCK_MODE else OBDReader(store)
@@ -25,7 +26,8 @@ def main():
         app = MultiPageApp(store, start_page=getattr(config, "START_PAGE", 0))
         app.run()
     except Exception:
-        app_log.exception("Erro não tratado no loop principal")
+        if config.LOG_ENABLED:
+            app_log.exception("Erro não tratado no loop principal")
         raise
     finally:
         reader.stop()
@@ -33,7 +35,8 @@ def main():
         if logger:
             logger.stop()
             logger.join(timeout=2)
-        app_log.info("=== sessão encerrada ===")
+        if config.LOG_ENABLED:
+            app_log.info("=== sessão encerrada ===")
 
 
 if __name__ == "__main__":

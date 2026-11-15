@@ -152,6 +152,7 @@ Key settings in `config.py`:
 - `OBD_PORT`: `"auto"` to automatically detect the USB ELM327 adapter, or an explicit port such as `"COM3"` (Windows) or `"/dev/ttyUSB0"` (Linux).
 - `OBD_BAUD`: serial baud rate (default `38400`; common alternatives are `115200` or `9600`).
 - `FULLSCREEN`: `True` for R36S / dedicated screens, `False` for windowed desktop testing.
+- `LOG_ENABLED`: `True` to record session CSV files (`logs/session_*.csv`) and diagnostic logs (`logs/errors_*.txt`), or `False` to disable all logging (saves SD card wear on R36S).
 
 ### 3. Run
 

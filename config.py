@@ -32,9 +32,10 @@ COLORS = {
 
 ALARM_SOUND  = False  # False para silenciar os beeps de alarme
 
-LOG_ENABLED  = True
+# --- Configurações de Logs (Telemetria CSV + Diagnóstico de Erros) ---
+LOG_ENABLED  = False  # False desabilita todos os logs (CSV e errors_*.txt); True habilita
 LOG_DIR      = "logs"
-LOG_INTERVAL = 1.0   # segundos entre cada linha gravada no CSV
+LOG_INTERVAL = 1.0    # segundos entre cada linha gravada no CSV
 
 RPM_MAX      = 7000
 RPM_REDLINE  = 5500
