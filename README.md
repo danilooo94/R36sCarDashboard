@@ -104,17 +104,27 @@ Raw sensor readings pass through a per-metric Exponential Moving Average (`val =
 
 `AlarmManager` (`dashboard/alarm.py`) evaluates oil temperature, coolant temperature, and battery voltage every frame, driving synchronized warning (1 Hz) / danger (2 Hz) blinking borders and procedurally synthesized sine-wave audio alerts (`ALARM_SOUND` in `config.py`).
 
+### 5. Regionalization / i18n Layer (`i18n/`)
+
+All UI labels (both pre-rendered static backgrounds and per-frame dynamic text) resolve through `i18n.t(key, **kwargs)`:
+- **Supported locales**: Brazilian Portuguese (`"pt-BR"`, `i18n/locales/pt_br.py`) and English (`"en"`, `i18n/locales/en.py`).
+- **Configuration & Live Switching**: set `LANGUAGE = "pt-BR"` or `"en"` in `config.py`, or toggle live at runtime with the `L` key on desktop / `Y` button (`LANG_BUTTON = 3`) on the R36S gamepad — `MultiPageApp` and `DailyCockpitPage` automatically rebuild their static surfaces and clear text caches on the next frame.
+- **Extensibility**: adding a new language only requires creating a dictionary module in `i18n/locales/` and registering it in `i18n/locales/__init__.py`.
+
 ---
 
 ## Project Structure
 
 ```text
 .
-├── config.py                  # Display, USB serial, thresholds, and telemetry constants
+├── config.py                  # Display, language, USB serial, thresholds, and telemetry constants
 ├── main.py                    # Unified entry point with global exception logging
 ├── app_log.py                 # Rotating session diagnostic/error logger (logs/errors_*.txt)
 ├── start.sh                   # Armbian / R36S launch script (KMS/DRM or X11 + dialout setup)
 ├── install_autostart.sh       # Systemd service installer for automatic boot into TTY1
+├── i18n/
+│   ├── __init__.py            # Translation lookup t(), get_lang(), set_lang(), next_lang()
+│   └── locales/               # Locale string catalogs (pt_br.py, en.py)
 ├── obd/
 │   ├── reader.py              # USB serial auto-discovery, tiered OBD-II polling & EMA filter
 │   ├── mock.py                # Synthetic sensor generator for offline development (MOCK_MODE)
@@ -152,6 +162,7 @@ Key settings in `config.py`:
 - `OBD_PORT`: `"auto"` to automatically detect the USB ELM327 adapter, or an explicit port such as `"COM3"` (Windows) or `"/dev/ttyUSB0"` (Linux).
 - `OBD_BAUD`: serial baud rate (default `38400`; common alternatives are `115200` or `9600`).
 - `FULLSCREEN`: `True` for R36S / dedicated screens, `False` for windowed desktop testing.
+- `LANGUAGE`: `"pt-BR"` (Brazilian Portuguese) or `"en"` (English); can also be toggled live with `L` / gamepad `Y`.
 - `LOG_ENABLED`: `True` to record session CSV files (`logs/session_*.csv`) and diagnostic logs (`logs/errors_*.txt`), or `False` to disable all logging (saves SD card wear on R36S).
 
 ### 3. Run

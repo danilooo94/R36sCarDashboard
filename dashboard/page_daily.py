@@ -15,6 +15,7 @@ import config
 from dashboard.console_battery import draw_phone_battery
 from dashboard.page_base import Page
 from dashboard.telemetry import fmt_hms
+from i18n import get_lang, t
 
 W, H = 640, 480
 
@@ -130,7 +131,9 @@ def _build_ring_track(radius, thickness):
 class DailyCockpitPage(Page):
     """Template 3 — OEM Daily / Eco & Trip Computer."""
 
-    name = "DAILY COCKPIT"
+    @property
+    def name(self) -> str:
+        return t("app.header_title")
 
     def __init__(self, screen):
         super().__init__(screen)
@@ -140,6 +143,8 @@ class DailyCockpitPage(Page):
 
         self._fonts = {}
         self._text_cache = {}
+        self._lang = get_lang()
+        self._hdr_half_w = 54
 
         # Smoothed needle/arc state & sparkline history
         self._rpm_disp = 0.0
@@ -192,7 +197,9 @@ class DailyCockpitPage(Page):
         bg.blit(_build_radial_glow((W, H), (W // 2, 55), 360, SKY, max_alpha=30), (0, 0))
 
         # Top header title
-        self._blit_center(bg, self._txt("DAILY COCKPIT", 13, SKY, bold=True), W // 2, 24)
+        hdr_surf = self._txt(t("app.header_title"), 13, SKY, bold=True)
+        self._hdr_half_w = hdr_surf.get_width() // 2
+        self._blit_center(bg, hdr_surf, W // 2, 24)
 
         # Left & Right supersampled ring tracks
         track_surf = _build_ring_track(_RING_R, _RING_THICK)
@@ -222,8 +229,8 @@ class DailyCockpitPage(Page):
             pygame.draw.aaline(bg, TXT_MUTED, p1, p2)
 
         # Static ring unit labels & bottom badge frames
-        self._blit_center(bg, self._txt("RPM x1000", 12, TXT_SUB), _LEFT_CENTER[0], _LEFT_CENTER[1] + 32)
-        self._blit_center(bg, self._txt("KM/H", 12, TXT_SUB), _RIGHT_CENTER[0], _RIGHT_CENTER[1] + 32)
+        self._blit_center(bg, self._txt(t("hud.rpm_unit"), 12, TXT_SUB), _LEFT_CENTER[0], _LEFT_CENTER[1] + 32)
+        self._blit_center(bg, self._txt(t("hud.speed_unit"), 12, TXT_SUB), _RIGHT_CENTER[0], _RIGHT_CENTER[1] + 32)
 
         for cx, cy, bw in ((_LEFT_CENTER[0], _LEFT_CENTER[1], 56), (_RIGHT_CENTER[0], _RIGHT_CENTER[1], 66)):
             badge_rect = pygame.Rect(cx - bw // 2, cy + 48, bw, 28)
@@ -234,8 +241,8 @@ class DailyCockpitPage(Page):
         card_rect = pygame.Rect(238, 88, 164, 224)
         pygame.draw.rect(bg, CARD, card_rect, border_radius=10)
         pygame.draw.rect(bg, BORDER, card_rect, 1, border_radius=10)
-        self._blit_center(bg, self._txt("CONSUMO INSTANT.", 11, TXT_SUB), W // 2, 108)
-        self._blit_center(bg, self._txt("km / litro", 12, TXT_MUTED, bold=False), W // 2, 168)
+        self._blit_center(bg, self._txt(t("hud.economy_title"), 11, TXT_SUB), W // 2, 108)
+        self._blit_center(bg, self._txt(t("hud.economy_unit"), 12, TXT_MUTED, bold=False), W // 2, 168)
 
         # Sparkline inset box + subtle horizontal guide lines
         spark_rect = pygame.Rect(252, 188, 136, 72)
@@ -245,7 +252,12 @@ class DailyCockpitPage(Page):
         pygame.draw.rect(bg, BORDER, spark_rect, 1, border_radius=6)
 
         # Bottom 4 Health Pill Cards (static base)
-        pill_labels = ("ÁGUA", "ÓLEO", "BATERIA", "ACEL / BOOST")
+        pill_labels = (
+            t("hud.pill_water"),
+            t("hud.pill_oil"),
+            t("hud.pill_battery"),
+            t("hud.pill_tps_boost"),
+        )
         pill_w = (592 - 12 * 3) // 4   # 139 px each
         self._pill_rects = []
         for i, lbl in enumerate(pill_labels):
@@ -289,6 +301,11 @@ class DailyCockpitPage(Page):
             self._econ_hist.append(float(kml) if kml is not None else 0.0)
 
     def draw(self):
+        if get_lang() != self._lang:
+            self._lang = get_lang()
+            self._text_cache.clear()
+            self._build_static_bg()
+
         d = self._data
         cv = self.cv
         cv.blit(self._bg, (0, 0))
@@ -318,13 +335,14 @@ class DailyCockpitPage(Page):
             cv.blit(self._danger_glow, (0, 0))
 
         # 1. Top Status Bar (Trip | Connection dot | IAT | R36S Battery)
-        cv.blit(self._txt(f"TRIP  {fmt_hms(trip_s)}", 13, TXT_SUB, mono=True), (24, 17))
+        cv.blit(self._txt(t("hud.trip", time=fmt_hms(trip_s)), 13, TXT_SUB, mono=True), (24, 17))
 
         dot_col = GREEN_DOT if connected else RED
-        gfxdraw.filled_circle(cv, W // 2 - 66, 24, 4, dot_col)
-        gfxdraw.aacircle(cv, W // 2 - 66, 24, 4, dot_col)
+        dot_x = W // 2 - self._hdr_half_w - 12
+        gfxdraw.filled_circle(cv, dot_x, 24, 4, dot_col)
+        gfxdraw.aacircle(cv, dot_x, 24, 4, dot_col)
         if connected and obd_port:
-            cv.blit(self._txt(obd_port, 11, TXT_MUTED, mono=True), (W // 2 + 62, 18))
+            cv.blit(self._txt(obd_port, 11, TXT_MUTED, mono=True), (W // 2 + self._hdr_half_w + 10, 18))
 
         iat_right_x = W - 24
         if getattr(config, "SHOW_CONSOLE_BATTERY", True):
@@ -340,7 +358,7 @@ class DailyCockpitPage(Page):
             pygame.draw.line(cv, BORDER, (sep_x, 17), (sep_x, 31), 1)
             iat_right_x = sep_x - 10
 
-        iat_str = f"IAT {iat:.0f}°C" if iat > 0 else "IAT --°C"
+        iat_str = t("hud.iat_value", temp=f"{iat:.0f}") if iat > 0 else t("hud.iat_empty")
         iat_surf = self._txt(iat_str, 13, TXT_SUB, mono=True)
         cv.blit(iat_surf, (iat_right_x - iat_surf.get_width(), 17))
 
@@ -362,7 +380,7 @@ class DailyCockpitPage(Page):
             cv, self._txt(f"{rpm / 1000.0:.1f}", 44, TXT_MAIN),
             _LEFT_CENTER[0], _LEFT_CENTER[1] - 4
         )
-        gear_lbl = "N" if gear <= 0 else f"D{gear}"
+        gear_lbl = t("hud.gear_neutral") if gear <= 0 else t("hud.gear_engaged", gear=gear)
         self._blit_center(
             cv, self._txt(gear_lbl, 16, rpm_col, mono=True),
             _LEFT_CENTER[0], _LEFT_CENTER[1] + 62
@@ -404,13 +422,14 @@ class DailyCockpitPage(Page):
         z_last = d.get("zero100_last")
 
         if z_state == "RUNNING":
-            z_txt, z_col = f"0-100: {z_time:.1f}s", AMBER_TXT
+            z_txt, z_col = t("hud.zero100_run", time=f"{z_time:.1f}"), AMBER_TXT
         elif z_last is not None:
-            z_txt, z_col = f"0-100: {z_last:.1f}s", TXT_SUB
+            z_txt, z_col = t("hud.zero100_run", time=f"{z_last:.1f}"), TXT_SUB
         elif z_best is not None:
-            z_txt, z_col = f"BEST 0-100: {z_best:.1f}s", TXT_SUB
+            z_txt, z_col = t("hud.zero100_best", time=f"{z_best:.1f}"), TXT_SUB
         else:
-            z_txt, z_col = "0-100: PRONTO" if z_state == "READY" else "0-100: --.-s", TXT_MUTED
+            z_txt = t("hud.zero100_ready") if z_state == "READY" else t("hud.zero100_idle")
+            z_col = TXT_MUTED
 
         self._blit_center(cv, self._txt(z_txt, 12, z_col, mono=True), W // 2, 286)
 

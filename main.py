@@ -1,5 +1,6 @@
 import config
 import app_log
+from i18n                import t
 from obd.store           import DataStore
 from obd.reader          import OBDReader
 from obd.mock            import MockReader
@@ -10,7 +11,7 @@ from dashboard.multi_app import MultiPageApp
 def main():
     if config.LOG_ENABLED:
         app_log.install_excepthook()
-        app_log.info(f"=== sessão iniciada — log de erros: {app_log.path} ===")
+        app_log.info(t("log.session_start", path=app_log.path))
 
     store  = DataStore()
     reader = MockReader(store) if config.MOCK_MODE else OBDReader(store)
@@ -20,14 +21,14 @@ def main():
     if config.LOG_ENABLED:
         logger = DataLogger(store)
         logger.start()
-        app_log.info(f"Gravando dados em: {logger.path}")
+        app_log.info(t("log.recording_csv", path=logger.path))
 
     try:
         app = MultiPageApp(store, start_page=getattr(config, "START_PAGE", 0))
         app.run()
     except Exception:
         if config.LOG_ENABLED:
-            app_log.exception("Erro não tratado no loop principal")
+            app_log.exception(t("log.unhandled_loop_error"))
         raise
     finally:
         reader.stop()
@@ -36,7 +37,7 @@ def main():
             logger.stop()
             logger.join(timeout=2)
         if config.LOG_ENABLED:
-            app_log.info("=== sessão encerrada ===")
+            app_log.info(t("log.session_end"))
 
 
 if __name__ == "__main__":

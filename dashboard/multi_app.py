@@ -27,6 +27,7 @@ from dashboard.page_daily      import (
     _draw_thick_arc,
 )
 from dashboard.telemetry       import DerivedTelemetry
+from i18n                      import get_lang, next_lang, t
 
 
 class MultiPageApp:
@@ -47,7 +48,7 @@ class MultiPageApp:
         flags = pygame.FULLSCREEN if config.FULLSCREEN else 0
         self.screen = pygame.display.set_mode(
             (config.SCREEN_WIDTH, config.SCREEN_HEIGHT), flags)
-        pygame.display.set_caption("Daily Cockpit — OBD2")
+        pygame.display.set_caption(t("app.window_title"))
         self.clock   = pygame.time.Clock()
         self.store   = store
         self.running = True
@@ -83,6 +84,8 @@ class MultiPageApp:
         self._font_badge    = pygame.font.SysFont(mono, 12, bold=True)
 
         # Pre-render static startup background
+        self._conn_lang = get_lang()
+        self._conn_hdr_half_w = 54
         self._conn_bg = self._build_connecting_bg()
 
         # ── Joystick / gamepad init ──────────────────────────────────────────
@@ -103,6 +106,8 @@ class MultiPageApp:
     def _handle_events(self):
         page_next_key = getattr(config, "PAGE_NEXT_KEY", pygame.K_RIGHT)
         page_prev_key = getattr(config, "PAGE_PREV_KEY", pygame.K_LEFT)
+        lang_key      = getattr(config, "LANG_KEY", pygame.K_l)
+        lang_btn      = getattr(config, "LANG_BUTTON", 3)
         exit_key      = getattr(config, "EXIT_KEY", 97)  # pygame.K_a
 
         for event in pygame.event.get():
@@ -117,6 +122,9 @@ class MultiPageApp:
                     self._next_page()
                 elif event.key == page_prev_key:
                     self._prev_page()
+                elif event.key == lang_key:
+                    next_lang()
+                    pygame.display.set_caption(t("app.window_title"))
 
             # ── Joystick buttons ─────────────────────────────────────────────
             elif event.type == pygame.JOYBUTTONDOWN:
@@ -126,6 +134,9 @@ class MultiPageApp:
                     self._next_page()
                 elif event.button == 4:
                     self._prev_page()
+                elif event.button == lang_btn:
+                    next_lang()
+                    pygame.display.set_caption(t("app.window_title"))
 
             # ── Joystick hat (D-pad) ─────────────────────────────────────────
             elif event.type == pygame.JOYHATMOTION:
@@ -178,8 +189,11 @@ class MultiPageApp:
         bg.blit(_build_radial_glow((W, H), self._CONN_RING_CENTER, 150, TEAL, max_alpha=20), (0, 0))
 
         # Top header bar (matches DailyCockpitPage layout)
-        bg.blit(self._font_batt.render("USB SERIAL", True, TXT_SUB), (24, 17))
-        self._blit_center(bg, self._font_hdr.render("DAILY COCKPIT", True, SKY), W // 2, 24)
+        mode_str = t("conn.mode_mock") if getattr(config, "MOCK_MODE", False) else t("conn.mode_usb")
+        bg.blit(self._font_batt.render(mode_str, True, TXT_SUB), (24, 17))
+        hdr_surf = self._font_hdr.render(t("app.header_title"), True, SKY)
+        self._conn_hdr_half_w = hdr_surf.get_width() // 2
+        self._blit_center(bg, hdr_surf, W // 2, 24)
 
         # Supersampled 360° circular ring track in center
         ss = 3
@@ -219,7 +233,7 @@ class MultiPageApp:
                 px = cx - 12 + col_i * 8
                 gfxdraw.filled_circle(bg, px, row_y, 1, TEAL)
 
-        self._blit_center(bg, self._font_badge.render("OBD-II", True, TXT_SUB), cx, cy + 20)
+        self._blit_center(bg, self._font_badge.render(t("conn.obd_badge"), True, TXT_SUB), cx, cy + 20)
 
         # Center Status Card
         card_rect = pygame.Rect((W - 432) // 2, 276, 432, 102)
@@ -228,13 +242,13 @@ class MultiPageApp:
 
         self._blit_center(
             bg,
-            self._font_title.render("Conectando à interface OBD-II", True, TXT_MAIN),
+            self._font_title.render(t("conn.title"), True, TXT_MAIN),
             W // 2,
             304,
         )
         self._blit_center(
             bg,
-            self._font_sub.render("Conecte o adaptador USB ELM327 e ligue a ignição", True, TXT_SUB),
+            self._font_sub.render(t("conn.subtitle"), True, TXT_SUB),
             W // 2,
             330,
         )
@@ -245,12 +259,13 @@ class MultiPageApp:
         pygame.draw.rect(bg, BORDER, bar_well, 1, border_radius=4)
 
         # Bottom 3 Configuration / Status Pills
-        port_cfg = str(getattr(config, "OBD_PORT", "auto")).upper()
+        raw_port = str(getattr(config, "OBD_PORT", "auto"))
+        port_cfg = t("conn.port_auto") if raw_port.lower() == "auto" else raw_port.upper()
         baud_cfg = f"{getattr(config, 'OBD_BAUD', 38400)} bps"
         pills = (
-            ("PORTA USB", port_cfg),
-            ("VELOCIDADE", baud_cfg),
-            ("STATUS", None),  # dynamic
+            (t("conn.pill_port"), port_cfg),
+            (t("conn.pill_baud"), baud_cfg),
+            (t("conn.pill_status"), None),  # dynamic
         )
         pill_w = 136
         gap = 12
@@ -272,18 +287,23 @@ class MultiPageApp:
 
     def _draw_connecting_screen(self, data: dict = None):
         """Draws the OEM Daily startup screen while waiting for OBD-II connection."""
+        if get_lang() != self._conn_lang:
+            self._conn_lang = get_lang()
+            self._conn_bg = self._build_connecting_bg()
+
         W = config.SCREEN_WIDTH
-        t = pygame.time.get_ticks() / 1000.0
+        t_sec = pygame.time.get_ticks() / 1000.0
         cx, cy = self._CONN_RING_CENTER
 
         self.screen.blit(self._conn_bg, (0, 0))
 
-        # 1. Top Bar: status dot next to DAILY COCKPIT + R36S Battery on right
+        # 1. Top Bar: status dot next to header + R36S Battery on right
         is_connected = bool(data and data.get("connected", False))
-        pulse_on = (int(t * 2.5) % 2) == 0
+        pulse_on = (int(t_sec * 2.5) % 2) == 0
         dot_col = GREEN_DOT if is_connected else (AMBER if pulse_on else BADGE_BD)
-        gfxdraw.filled_circle(self.screen, W // 2 - 66, 24, 4, dot_col)
-        gfxdraw.aacircle(self.screen, W // 2 - 66, 24, 4, dot_col)
+        dot_x = W // 2 - self._conn_hdr_half_w - 12
+        gfxdraw.filled_circle(self.screen, dot_x, 24, 4, dot_col)
+        gfxdraw.aacircle(self.screen, dot_x, 24, 4, dot_col)
 
         if data and getattr(config, "SHOW_CONSOLE_BATTERY", True):
             draw_phone_battery(
@@ -296,8 +316,8 @@ class MultiPageApp:
             )
 
         # 2. Dual smooth orbiting arcs around the central OBD-II ring
-        base_deg = (t * 150.0) % 360.0
-        sweep = 88.0 + 28.0 * math.sin(t * 2.6)
+        base_deg = (t_sec * 150.0) % 360.0
+        sweep = 88.0 + 28.0 * math.sin(t_sec * 2.6)
         _draw_thick_arc(
             self.screen, cx, cy,
             self._CONN_RING_R, self._CONN_RING_THICK,
@@ -313,7 +333,7 @@ class MultiPageApp:
         track_x = (W - 336) // 2
         track_w = 336
         seg_w = 96
-        pos = (math.sin(t * 2.4) + 1.0) * 0.5  # smooth ease-in-out 0..1
+        pos = (math.sin(t_sec * 2.4) + 1.0) * 0.5  # smooth ease-in-out 0..1
         seg_x = int(track_x + pos * (track_w - seg_w))
         pygame.draw.rect(self.screen, SKY, (seg_x, 353, seg_w, 6), border_radius=3)
 
@@ -324,12 +344,12 @@ class MultiPageApp:
             if is_connected:
                 gfxdraw.filled_circle(self.screen, dx, dy, 4, GREEN_DOT)
                 gfxdraw.aacircle(self.screen, dx, dy, 4, GREEN_DOT)
-                st_surf = self._font_pill_val.render("CONECTADO", True, TEAL)
+                st_surf = self._font_pill_val.render(t("conn.status_connected"), True, TEAL)
             else:
                 gfxdraw.filled_circle(self.screen, dx, dy, 4, AMBER if pulse_on else BADGE_BD)
                 gfxdraw.aacircle(self.screen, dx, dy, 4, AMBER if pulse_on else BADGE_BD)
-                dots = "." * ((int(t * 2.0) % 3) + 1)
-                st_surf = self._font_pill_val.render(f"BUSCANDO{dots}", True, AMBER_TXT)
+                dots = "." * ((int(t_sec * 2.0) % 3) + 1)
+                st_surf = self._font_pill_val.render(f"{t('conn.status_searching')}{dots}", True, AMBER_TXT)
             self.screen.blit(st_surf, (r.x + 28, r.y + 32))
 
     # ── Main loop ────────────────────────────────────────────────────────────

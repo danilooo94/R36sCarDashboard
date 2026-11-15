@@ -4,6 +4,8 @@ FPS = 60
 FULLSCREEN = False   # True para sempre abrir em tela cheia (útil no R36S)
 EXIT_KEY   = 97    # pygame.K_a — botão A no R36S / tecla 'a' no PC
 SHOW_CONSOLE_BATTERY = True  # Exibe ícone + % da bateria do R36S no topo da tela
+LANGUAGE   = "en"         # Idioma: "pt-BR" (Português Brasileiro) ou "en" (English)
+LANGUAGE   = "pt-BR"         # Idioma: "pt-BR" (Português Brasileiro) ou "en" (English)
 
 MOCK_MODE = False    # True para testar sem adaptador OBD
 
@@ -12,10 +14,12 @@ OBD_PORT          = "auto"    # "auto" detecta a porta USB, ou força ex: "COM3"
 OBD_BAUD          = 38400     # 38400 (padrão ELM327), 115200, ou 9600
 OBD_POLL_INTERVAL = 0.01      # segundos entre ciclos de leitura (prioridade rápida a ~15-20 Hz)
 
-# Navegação entre páginas
+# Navegação entre páginas e atalho de idioma
 import pygame
 PAGE_NEXT_KEY = pygame.K_RIGHT    # D-pad direita no R36S / seta direita no PC
 PAGE_PREV_KEY = pygame.K_LEFT     # D-pad esquerda no R36S / seta esquerda no PC
+LANG_KEY      = pygame.K_l        # Tecla 'l' no PC para alternar idioma (pt-BR <-> en)
+LANG_BUTTON   = 3                 # Botão Y no R36S / gamepad para alternar idioma ao vivo
 START_PAGE    = 0                 # Página inicial (0 = Daily Cockpit)
 
 COLORS = {
