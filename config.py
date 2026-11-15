@@ -5,7 +5,7 @@ FULLSCREEN = False   # True para sempre abrir em tela cheia (útil no R36S)
 EXIT_KEY   = 97    # pygame.K_a — botão A no R36S / tecla 'a' no PC
 SHOW_CONSOLE_BATTERY = True  # Exibe ícone + % da bateria do R36S no topo da tela
 
-MOCK_MODE = True    # True para testar sem adaptador OBD
+MOCK_MODE = False    # True para testar sem adaptador OBD
 
 # --- Configurações de Conexão USB Serial (ELM327 / OBD-II) ---
 OBD_PORT          = "auto"    # "auto" detecta a porta USB, ou força ex: "COM3", "/dev/ttyUSB0"

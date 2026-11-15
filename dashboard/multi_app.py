@@ -2,32 +2,57 @@ import math
 import time
 
 import pygame
+from pygame import gfxdraw
+
 import config
 from dashboard.alarm           import AlarmManager
 from dashboard.console_battery import ConsoleBatteryReader, draw_phone_battery
-from dashboard.page_daily      import DailyCockpitPage
+from dashboard.page_daily      import (
+    BG,
+    CARD,
+    CARD_DARK,
+    BORDER,
+    BADGE_BG,
+    BADGE_BD,
+    TXT_MAIN,
+    TXT_SUB,
+    TXT_MUTED,
+    SKY,
+    TEAL,
+    GREEN_DOT,
+    AMBER,
+    AMBER_TXT,
+    DailyCockpitPage,
+    _build_radial_glow,
+    _draw_thick_arc,
+)
 from dashboard.telemetry       import DerivedTelemetry
 
 
 class MultiPageApp:
-    """Unified application loop that manages multiple dashboard pages.
+    """Unified application loop that manages dashboard pages and the OEM startup screen.
 
     Pages can be cycled at runtime using the left/right arrow keys
     (or D-pad on the R36S).  The AlarmManager runs globally so beeps
     and blink state are maintained regardless of which page is visible.
     """
 
+    _CONN_RING_CENTER = (320, 182)
+    _CONN_RING_R      = 68
+    _CONN_RING_THICK  = 12
+    _MIN_SPLASH_SECS  = 1.4
+
     def __init__(self, store, start_page=0):
         pygame.init()
         flags = pygame.FULLSCREEN if config.FULLSCREEN else 0
         self.screen = pygame.display.set_mode(
             (config.SCREEN_WIDTH, config.SCREEN_HEIGHT), flags)
-        pygame.display.set_caption("Car HUD")
+        pygame.display.set_caption("Daily Cockpit — OBD2")
         self.clock   = pygame.time.Clock()
         self.store   = store
         self.running = True
 
-        # ── Telemetria derivada (marchas, 0-100, consumo, boost) ─────────────
+        # ── Telemetria derivada & bateria do console ─────────────────────────
         self.derived = DerivedTelemetry()
         self.console_battery = ConsoleBatteryReader()
 
@@ -43,12 +68,22 @@ class MultiPageApp:
         # ── State Machine ────────────────────────────────────────────────────
         # "CONNECTING" shows the initial loading screen until OBD connects.
         self.state = "CONNECTING"
+        self._boot_at = time.monotonic()
 
-        # ── Fonts ────────────────────────────────────────────────────────────
-        self._font_ind = pygame.font.SysFont("monospace", 10)
-        self._font_batt = pygame.font.SysFont("consolas,dejavusansmono,monospace", 13, bold=True)
-        self._font_title = pygame.font.SysFont("monospace", 32, bold=True)
-        self._font_subtitle = pygame.font.SysFont("monospace", 16)
+        # ── Fonts (matched to DailyCockpitPage) ──────────────────────────────
+        sans = "segoeui,dejavusans,liberationsans,arial,sans-serif"
+        mono = "consolas,dejavusansmono,liberationmono,monospace"
+        self._font_ind      = pygame.font.SysFont(mono, 10, bold=True)
+        self._font_batt     = pygame.font.SysFont(mono, 13, bold=True)
+        self._font_hdr      = pygame.font.SysFont(sans, 13, bold=True)
+        self._font_title    = pygame.font.SysFont(sans, 19, bold=True)
+        self._font_sub      = pygame.font.SysFont(sans, 13, bold=False)
+        self._font_pill_lbl = pygame.font.SysFont(sans, 10, bold=True)
+        self._font_pill_val = pygame.font.SysFont(mono, 14, bold=True)
+        self._font_badge    = pygame.font.SysFont(mono, 12, bold=True)
+
+        # Pre-render static startup background
+        self._conn_bg = self._build_connecting_bg()
 
         # ── Joystick / gamepad init ──────────────────────────────────────────
         pygame.joystick.init()
@@ -85,13 +120,10 @@ class MultiPageApp:
 
             # ── Joystick buttons ─────────────────────────────────────────────
             elif event.type == pygame.JOYBUTTONDOWN:
-                # Button 0 = A on most gamepads → exit
                 if event.button == 0:
                     self.running = False
-                # Button 5 = R1 / right bumper → next page
                 elif event.button == 5:
                     self._next_page()
-                # Button 4 = L1 / left bumper → prev page
                 elif event.button == 4:
                     self._prev_page()
 
@@ -107,13 +139,13 @@ class MultiPageApp:
 
     def _draw_page_indicator(self):
         """Draw small dots at the bottom-centre showing current page."""
-        n      = len(self.pages)
+        n = len(self.pages)
         if n <= 1:
             return
 
-        dot_r  = 4
-        gap    = 14
-        total  = n * dot_r * 2 + (n - 1) * (gap - dot_r * 2)
+        dot_r   = 4
+        gap     = 14
+        total   = n * dot_r * 2 + (n - 1) * (gap - dot_r * 2)
         start_x = (config.SCREEN_WIDTH - total) // 2 + dot_r
         y       = config.SCREEN_HEIGHT - 12
 
@@ -122,23 +154,136 @@ class MultiPageApp:
             if i == self.current:
                 pygame.draw.circle(self.screen, config.COLORS["primary"], (cx, y), dot_r)
             else:
-                pygame.draw.circle(self.screen, config.COLORS["muted"],   (cx, y), dot_r, 1)
+                pygame.draw.circle(self.screen, config.COLORS["muted"], (cx, y), dot_r, 1)
 
-        # Page name label
         page = self.pages[self.current]
         lbl = self._font_ind.render(page.name, True, config.COLORS["muted"])
         self.screen.blit(lbl, ((config.SCREEN_WIDTH - lbl.get_width()) // 2,
                                y - dot_r - lbl.get_height() - 2))
 
-    # ── Initial Connection Screen ────────────────────────────────────────────
+    # ── OEM Daily Startup / Connecting Screen ────────────────────────────────
+
+    @staticmethod
+    def _blit_center(dst, surf, cx: int, cy: int):
+        dst.blit(surf, (cx - surf.get_width() // 2, cy - surf.get_height() // 2))
+
+    def _build_connecting_bg(self):
+        """Pre-render static elements of the startup screen matching DailyCockpitPage."""
+        W, H = config.SCREEN_WIDTH, config.SCREEN_HEIGHT
+        bg = pygame.Surface((W, H))
+        bg.fill(BG)
+
+        # Ambient top sky-blue glow + soft center halo behind spinner ring
+        bg.blit(_build_radial_glow((W, H), (W // 2, 55), 360, SKY, max_alpha=30), (0, 0))
+        bg.blit(_build_radial_glow((W, H), self._CONN_RING_CENTER, 150, TEAL, max_alpha=20), (0, 0))
+
+        # Top header bar (matches DailyCockpitPage layout)
+        bg.blit(self._font_batt.render("USB SERIAL", True, TXT_SUB), (24, 17))
+        self._blit_center(bg, self._font_hdr.render("DAILY COCKPIT", True, SKY), W // 2, 24)
+
+        # Supersampled 360° circular ring track in center
+        ss = 3
+        r_mid = self._CONN_RING_R
+        thick = self._CONN_RING_THICK
+        dim = (r_mid + thick + 8) * 2
+        hi = pygame.Surface((dim * ss, dim * ss), pygame.SRCALPHA)
+        hi.fill((*BORDER, 0))
+        c = (dim * ss) // 2
+        pygame.draw.circle(
+            hi,
+            BORDER,
+            (c, c),
+            int((r_mid + thick / 2) * ss),
+            width=int(thick * ss),
+        )
+        track = pygame.transform.smoothscale(hi, (dim, dim))
+        cx, cy = self._CONN_RING_CENTER
+        bg.blit(track, (cx - dim // 2, cy - dim // 2))
+
+        # Inner subtle badge circle + crisp OBD-II / USB connector icon
+        gfxdraw.filled_circle(bg, cx, cy, 46, CARD)
+        gfxdraw.aacircle(bg, cx, cy, 46, BORDER)
+
+        # Stylized trapezoidal OBD-II 16-pin connector silhouette
+        trap = [
+            (cx - 24, cy - 16),
+            (cx + 24, cy - 16),
+            (cx + 19, cy + 4),
+            (cx - 19, cy + 4),
+        ]
+        gfxdraw.filled_polygon(bg, trap, BADGE_BG)
+        gfxdraw.aapolygon(bg, trap, SKY)
+        # Two rows of 4 pin dots inside the OBD connector
+        for row_y in (cy - 10, cy - 3):
+            for col_i in range(4):
+                px = cx - 12 + col_i * 8
+                gfxdraw.filled_circle(bg, px, row_y, 1, TEAL)
+
+        self._blit_center(bg, self._font_badge.render("OBD-II", True, TXT_SUB), cx, cy + 20)
+
+        # Center Status Card
+        card_rect = pygame.Rect((W - 432) // 2, 276, 432, 102)
+        pygame.draw.rect(bg, CARD, card_rect, border_radius=10)
+        pygame.draw.rect(bg, BORDER, card_rect, 1, border_radius=10)
+
+        self._blit_center(
+            bg,
+            self._font_title.render("Conectando à interface OBD-II", True, TXT_MAIN),
+            W // 2,
+            304,
+        )
+        self._blit_center(
+            bg,
+            self._font_sub.render("Conecte o adaptador USB ELM327 e ligue a ignição", True, TXT_SUB),
+            W // 2,
+            330,
+        )
+
+        # Progress bar inset well inside status card
+        bar_well = pygame.Rect((W - 340) // 2, 352, 340, 8)
+        pygame.draw.rect(bg, CARD_DARK, bar_well, border_radius=4)
+        pygame.draw.rect(bg, BORDER, bar_well, 1, border_radius=4)
+
+        # Bottom 3 Configuration / Status Pills
+        port_cfg = str(getattr(config, "OBD_PORT", "auto")).upper()
+        baud_cfg = f"{getattr(config, 'OBD_BAUD', 38400)} bps"
+        pills = (
+            ("PORTA USB", port_cfg),
+            ("VELOCIDADE", baud_cfg),
+            ("STATUS", None),  # dynamic
+        )
+        pill_w = 136
+        gap = 12
+        total_w = pill_w * 3 + gap * 2
+        start_x = (W - total_w) // 2
+        self._conn_status_pill = None
+
+        for i, (lbl, val) in enumerate(pills):
+            r = pygame.Rect(start_x + i * (pill_w + gap), 396, pill_w, 62)
+            pygame.draw.rect(bg, CARD, r, border_radius=8)
+            pygame.draw.rect(bg, BORDER, r, 1, border_radius=8)
+            bg.blit(self._font_pill_lbl.render(lbl, True, TXT_MUTED), (r.x + 14, r.y + 10))
+            if val is not None:
+                bg.blit(self._font_pill_val.render(val, True, TXT_MAIN), (r.x + 14, r.y + 32))
+            else:
+                self._conn_status_pill = r
+
+        return bg
 
     def _draw_connecting_screen(self, data: dict = None):
-        """Draws the initial screen while waiting for OBD-II connection."""
-        title = self._font_title.render("CAR DATA READER", True, config.COLORS["text"])
-        subtitle = self._font_subtitle.render("Conectando à interface OBD-II...", True, config.COLORS["muted"])
-        
+        """Draws the OEM Daily startup screen while waiting for OBD-II connection."""
         W = config.SCREEN_WIDTH
-        H = config.SCREEN_HEIGHT
+        t = pygame.time.get_ticks() / 1000.0
+        cx, cy = self._CONN_RING_CENTER
+
+        self.screen.blit(self._conn_bg, (0, 0))
+
+        # 1. Top Bar: status dot next to DAILY COCKPIT + R36S Battery on right
+        is_connected = bool(data and data.get("connected", False))
+        pulse_on = (int(t * 2.5) % 2) == 0
+        dot_col = GREEN_DOT if is_connected else (AMBER if pulse_on else BADGE_BD)
+        gfxdraw.filled_circle(self.screen, W // 2 - 66, 24, 4, dot_col)
+        gfxdraw.aacircle(self.screen, W // 2 - 66, 24, 4, dot_col)
 
         if data and getattr(config, "SHOW_CONSOLE_BATTERY", True):
             draw_phone_battery(
@@ -150,37 +295,42 @@ class MultiPageApp:
                 self._font_batt,
             )
 
-        self._draw_engine_spinner((W // 2, H // 2 - 105))
-        self.screen.blit(title, ((W - title.get_width()) // 2, H // 2 - 45))
-        self.screen.blit(subtitle, ((W - subtitle.get_width()) // 2, H // 2 + 5))
+        # 2. Dual smooth orbiting arcs around the central OBD-II ring
+        base_deg = (t * 150.0) % 360.0
+        sweep = 88.0 + 28.0 * math.sin(t * 2.6)
+        _draw_thick_arc(
+            self.screen, cx, cy,
+            self._CONN_RING_R, self._CONN_RING_THICK,
+            base_deg, sweep, SKY,
+        )
+        _draw_thick_arc(
+            self.screen, cx, cy,
+            self._CONN_RING_R, self._CONN_RING_THICK,
+            (base_deg + 180.0) % 360.0, sweep * 0.65, TEAL,
+        )
 
-        ticks = pygame.time.get_ticks()
-        dot_count = (ticks // 500) % 4
-        dots = "." * dot_count
-        loading = self._font_subtitle.render(f"Aguarde{dots}", True, config.COLORS["primary"])
+        # 3. Smooth sliding scanner pill inside the center card's progress bar
+        track_x = (W - 336) // 2
+        track_w = 336
+        seg_w = 96
+        pos = (math.sin(t * 2.4) + 1.0) * 0.5  # smooth ease-in-out 0..1
+        seg_x = int(track_x + pos * (track_w - seg_w))
+        pygame.draw.rect(self.screen, SKY, (seg_x, 353, seg_w, 6), border_radius=3)
 
-        loading_w = self._font_subtitle.size("Aguarde...")[0]
-        self.screen.blit(loading, ((W - loading_w) // 2, H // 2 + 45))
-
-    def _draw_engine_spinner(self, center):
-        """Draw a small engine outline with a rotating loading arc inside."""
-        cx, cy = center
-        primary = config.COLORS["primary"]
-        muted = config.COLORS["muted"]
-        body = pygame.Rect(cx - 33, cy - 24, 66, 48)
-
-        pygame.draw.rect(self.screen, muted, body, 3, border_radius=5)
-        pygame.draw.rect(self.screen, muted, (cx - 43, cy - 12, 10, 24), 3)
-        pygame.draw.rect(self.screen, muted, (cx + 33, cy - 16, 10, 12), 3)
-        pygame.draw.line(self.screen, muted, (cx - 18, cy - 24), (cx - 18, cy - 34), 3)
-        pygame.draw.line(self.screen, muted, (cx + 8, cy - 24), (cx + 8, cy - 34), 3)
-        pygame.draw.line(self.screen, muted, (cx - 18, cy - 34), (cx + 8, cy - 34), 3)
-
-        spinner = pygame.Rect(cx - 18, cy - 18, 36, 36)
-        # pygame.draw.arc(surface, color, rect, start_angle, stop_angle, width=1)
-        pygame.draw.arc(self.screen, config.COLORS["arc_bg"], spinner, 0, math.tau, 4)
-        angle = (pygame.time.get_ticks() / 1000) * math.tau
-        pygame.draw.arc(self.screen, primary, spinner, angle, angle + math.pi * 1.35, 4)
+        # 4. Dynamic "STATUS" bottom pill
+        if self._conn_status_pill is not None:
+            r = self._conn_status_pill
+            dx, dy = r.x + 18, r.y + 40
+            if is_connected:
+                gfxdraw.filled_circle(self.screen, dx, dy, 4, GREEN_DOT)
+                gfxdraw.aacircle(self.screen, dx, dy, 4, GREEN_DOT)
+                st_surf = self._font_pill_val.render("CONECTADO", True, TEAL)
+            else:
+                gfxdraw.filled_circle(self.screen, dx, dy, 4, AMBER if pulse_on else BADGE_BD)
+                gfxdraw.aacircle(self.screen, dx, dy, 4, AMBER if pulse_on else BADGE_BD)
+                dots = "." * ((int(t * 2.0) % 3) + 1)
+                st_surf = self._font_pill_val.render(f"BUSCANDO{dots}", True, AMBER_TXT)
+            self.screen.blit(st_surf, (r.x + 28, r.y + 32))
 
     # ── Main loop ────────────────────────────────────────────────────────────
 
@@ -201,8 +351,8 @@ class MultiPageApp:
                 self.screen.fill(config.COLORS["bg"])
 
                 if self.state == "CONNECTING":
-                    # Transition to dashboard when first connected
-                    if data.get("connected", False):
+                    splash_done = (now - self._boot_at) >= self._MIN_SPLASH_SECS
+                    if data.get("connected", False) and splash_done:
                         self.state = "DASHBOARD"
                     else:
                         self._draw_connecting_screen(data)
@@ -215,9 +365,8 @@ class MultiPageApp:
                     page.draw_alarms(self.alarm)
 
                     self._draw_page_indicator()
-                
+
                 pygame.display.flip()
                 self.clock.tick(config.FPS)
         finally:
             pygame.quit()
-
