@@ -145,7 +145,7 @@ class OBDReader(threading.Thread):
         if self.port != "auto":
             return self.port
         port = find_obd_port()
-        if port is None:
+        if port is None and not self._stop.is_set():
             app_log.warning("[OBD] no USB serial port found — retrying in 3 s")
         return port
 
@@ -153,13 +153,20 @@ class OBDReader(threading.Thread):
         while not self._stop.is_set():
             port = self._resolve_port()
             if port is None:
-                self.store.set("connected", False)
+                if not self._stop.is_set():
+                    self.store.set("connected", False)
                 self._stop.wait(timeout=3)
                 continue
 
             try:
                 app_log.info(f"[OBD] connecting to {port} at {self.baudrate} baud")
                 conn = Connection(port, baudrate=self.baudrate, auto_connect=True)
+                if self._stop.is_set():
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+                    break
                 self._conn = conn
                 self.store.set("connected", True)
                 self.store.set("obd_port", port)
@@ -199,23 +206,32 @@ class OBDReader(threading.Thread):
                     cycle = (cycle + 1) % 1000
 
                     for key, cmd in cmds_to_query:
+                        if self._stop.is_set():
+                            break
                         try:
                             resp = conn.query(cmd)
+                            if self._stop.is_set():
+                                break
                             raw_val = resp.value if resp is not None and resp.value is not None else 0
                             filtered_val = self._apply_ema(key, raw_val)
                             self.store.set(key, filtered_val)
                         except Exception as q_err:
+                            if self._stop.is_set():
+                                break
                             if not conn.is_connected():
                                 raise q_err
 
                     poll_delay = getattr(config, "OBD_POLL_INTERVAL", 0.01)
-                    if poll_delay > 0:
+                    if poll_delay > 0 and not self._stop.is_set():
                         self._stop.wait(timeout=poll_delay)
             except Exception as e:
+                if self._stop.is_set():
+                    break
                 app_log.error(f"[OBD] connection error on {port}: {e}")
                 self.store.set("connected", False)
                 self._stop.wait(timeout=2)
-                self.store.set("obd_port", "")
+                if not self._stop.is_set():
+                    self.store.set("obd_port", "")
                 if self._conn:
                     try:
                         self._conn.close()

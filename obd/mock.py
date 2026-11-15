@@ -10,8 +10,9 @@ class MockReader(threading.Thread):
         self._stop = threading.Event()
 
     def run(self):
-        self.store.set("connected", True)
-        self.store.set("obd_port", "MOCK-USB")
+        if self._stop.is_set():
+            return
+        self.store.update_many({"connected": True, "obd_port": "MOCK"})
         t = 0.0
         while not self._stop.is_set():
             rpm      = 850 + abs(math.sin(t * 0.28)) * 5150 + random.uniform(-60, 60)
@@ -26,17 +27,22 @@ class MockReader(threading.Thread):
             volt     = 13.9 + math.sin(t * 0.1) * 0.3 + random.uniform(-0.05, 0.05)
             fuel     = max(8.0, 78.0 - (t * 0.05) % 70.0)
 
-            self.store.set("rpm",         rpm)
-            self.store.set("speed",       speed)
-            self.store.set("throttle",    throttle)
-            self.store.set("load",        load)
-            self.store.set("map_kpa",     map_kpa)
-            self.store.set("maf",         maf)
-            self.store.set("oil_temp",    oil)
-            self.store.set("water_temp",  water)
-            self.store.set("intake_temp", iat)
-            self.store.set("voltage",     volt)
-            self.store.set("fuel",        fuel)
+            if self._stop.is_set():
+                break
+
+            self.store.update_many({
+                "rpm":         rpm,
+                "speed":       speed,
+                "throttle":    throttle,
+                "load":        load,
+                "map_kpa":     map_kpa,
+                "maf":         maf,
+                "oil_temp":    oil,
+                "water_temp":  water,
+                "intake_temp": iat,
+                "voltage":     volt,
+                "fuel":        fuel,
+            })
 
             t += 0.1
             self._stop.wait(timeout=0.1)

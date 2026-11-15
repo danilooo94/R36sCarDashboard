@@ -57,6 +57,7 @@ class DataLogger(threading.Thread):
         self._file = None
         self._writer = None
         self._active_date = None
+        self._active_mock = None
 
     def _open_new_session(self, now: datetime):
         self._close_session()
@@ -79,6 +80,7 @@ class DataLogger(threading.Thread):
         self._file = None
         self._writer = None
         self._active_date = None
+        self._active_mock = None
 
     def run(self):
         try:
@@ -98,8 +100,10 @@ class DataLogger(threading.Thread):
 
                 now = datetime.now()
                 today = now.strftime("%Y-%m-%d")
-                if self._file is None or self._active_date != today:
+                is_mock = settings.enabled("mock_mode")
+                if self._file is None or self._active_date != today or self._active_mock != is_mock:
                     self._open_new_session(now)
+                    self._active_mock = is_mock
 
                 row = {"timestamp": now.isoformat(timespec="seconds")}
                 for col, key in _STORE_KEYS.items():

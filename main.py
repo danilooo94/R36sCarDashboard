@@ -58,8 +58,7 @@ def main(argv=None):
     import app_log
     from i18n                import t
     from obd.store           import DataStore
-    from obd.reader          import OBDReader
-    from obd.mock            import MockReader
+    from obd.manager         import ReaderManager
     from obd.logger          import DataLogger
     from dashboard.multi_app import MultiPageApp
     from web.server          import WebAnalyticsServer
@@ -68,9 +67,9 @@ def main(argv=None):
         app_log.install_excepthook()
         app_log.info(t("log.session_start", path=app_log.path))
 
-    store  = DataStore()
-    reader = MockReader(store) if config.MOCK_MODE else OBDReader(store)
-    reader.start()
+    store          = DataStore()
+    reader_manager = ReaderManager(store)
+    reader_manager.start()
 
     # DataLogger dynamically checks settings.enabled("data_logging") at runtime
     logger = DataLogger(store)
@@ -85,6 +84,7 @@ def main(argv=None):
             store,
             start_page=getattr(config, "START_PAGE", 0),
             web_server=web_server,
+            reader_manager=reader_manager,
         )
         app.run()
     except Exception:
@@ -93,8 +93,7 @@ def main(argv=None):
         raise
     finally:
         web_server.stop()
-        reader.stop()
-        reader.join(timeout=2)
+        reader_manager.stop(timeout=2)
         logger.stop()
         logger.join(timeout=2)
         if settings.enabled("data_logging"):

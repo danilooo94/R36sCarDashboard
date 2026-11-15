@@ -18,6 +18,7 @@ import pygame
 PAGE_NEXT_KEY = pygame.K_RIGHT    # D-pad direita no R36S / seta direita no PC
 PAGE_PREV_KEY = pygame.K_LEFT     # D-pad esquerda no R36S / seta esquerda no PC
 LANG_KEY      = pygame.K_l        # Tecla 'l' no PC para alternar idioma (pt-BR <-> en)
+MOCK_KEY      = pygame.K_m        # Tecla 'm' no PC para alternar modo Mock <-> OBD-II Real
 LANG_BUTTON   = 3                 # Botão Y no R36S / gamepad para alternar idioma ao vivo
 START_PAGE    = 0                 # Página inicial (0 = Daily Cockpit)
 
@@ -47,6 +48,7 @@ USER_SETTINGS_FILE = "user_settings.json"  # Salva alterações feitas na tela d
 # --- Funções / Sensores Habilitados por Padrão ---
 # Podem ser alterados aqui ou diretamente na tela de Configurações pelo controle do R36S
 FEATURES = {
+    "mock_mode":       MOCK_MODE,             # Modo Simulação (True = Mock, False = OBD-II Real)
     "data_logging":    LOG_ENABLED,           # Gravação de telemetria CSV (logs/session_*.csv)
     "turbo":           False,                 # Pressão de Turbo / Boost (False para motores aspirados)
     "water_temp":      True,                  # Temperatura da Água (Arrefecimento)

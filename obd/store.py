@@ -25,6 +25,14 @@ class DataStore:
         with self._lock:
             self._data[key] = value
 
+    def update_many(self, values: dict):
+        with self._lock:
+            self._data.update(values)
+
+    def reset(self):
+        with self._lock:
+            self._data = dict(self._defaults)
+
     def snapshot(self):
         with self._lock:
             return dict(self._data)

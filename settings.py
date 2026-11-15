@@ -17,6 +17,7 @@ _REVISION = 1
 
 def _defaults() -> dict:
     base = {
+        "mock_mode":       bool(getattr(config, "MOCK_MODE", False)),
         "data_logging":    bool(getattr(config, "LOG_ENABLED", True)),
         "turbo":           False,
         "water_temp":      True,

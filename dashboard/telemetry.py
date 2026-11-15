@@ -4,6 +4,7 @@ Calculadas globalmente pelo MultiPageApp (uma vez por frame), para que o timer
 0-100 e o tempo de viagem continuem funcionando mesmo com outra página aberta.
 Nenhuma dependência de pygame: lógica pura e testável.
 """
+from collections import deque
 import json
 import math
 import os
@@ -159,7 +160,8 @@ class ZeroToHundred:
                 self.elapsed = self.last
                 if self.best is None or self.last < self.best:
                     self.best = self.last
-                    self._save_best()
+                    if not settings.enabled("mock_mode"):
+                        self._save_best()
                 self.state = self.DONE
                 self._done_at = now
             elif (speed <= self.STOP_KMH
@@ -187,6 +189,15 @@ class DerivedTelemetry:
         self._trip_km = 0.0
         self._last_now = None
         self._consumption = None     # km/l suavizado
+
+    def reset(self):
+        """Reset session-specific counters when switching between Mock and Real modes."""
+        self.gear = GearEstimator()
+        self.zero100 = ZeroToHundred()
+        self._trip_secs = 0.0
+        self._trip_km = 0.0
+        self._last_now = None
+        self._consumption = None
 
     def update(self, data: dict, now: float = None) -> dict:
         now = time.monotonic() if now is None else now
@@ -245,3 +256,61 @@ class DerivedTelemetry:
             "zero100_last":     self.zero100.last,
             "zero100_best":     self.zero100.best,
         }
+
+
+# ── Histórico Contínuo para Gráficos ao Vivo ─────────────────────────────────
+
+HISTORY_KEYS = (
+    "rpm",
+    "speed",
+    "water_temp",
+    "oil_temp",
+    "voltage",
+    "throttle",
+    "load",
+    "intake_temp",
+    "consumption_kml",
+    "maf",
+    "fuel",
+    "boost_bar",
+    "map_kpa",
+)
+
+
+class TelemetryHistory:
+    """Armazena séries temporais `(timestamp, valor)` em segundo plano para todas as abas de gráficos."""
+
+    def __init__(self, sample_interval: float = 0.20, max_seconds: float = 190.0):
+        self.sample_interval = float(sample_interval)
+        maxlen = max(60, int(math.ceil(max_seconds / self.sample_interval)) + 8)
+        self._buffers = {k: deque(maxlen=maxlen) for k in HISTORY_KEYS}
+        self._last_sample_at = 0.0
+
+    def clear(self):
+        """Limpa todo o histórico acumulado (ex.: ao alternar entre Mock e OBD Real)."""
+        for buf in self._buffers.values():
+            buf.clear()
+        self._last_sample_at = 0.0
+
+    def record(self, data: dict, now: float = None):
+        """Amostra todos os parâmetros quando conectado, respeitando `sample_interval`."""
+        if not data.get("connected", False):
+            return
+        now = time.monotonic() if now is None else now
+        if self._last_sample_at > 0.0 and (now - self._last_sample_at) < self.sample_interval:
+            return
+        self._last_sample_at = now
+
+        for k, buf in self._buffers.items():
+            raw = data.get(k)
+            val = float(raw) if raw is not None else 0.0
+            buf.append((now, val))
+
+    def get_window(self, key: str, window_secs: float, now: float = None) -> list:
+        """Retorna lista de `(t, valor)` dentro dos últimos `window_secs` segundos."""
+        buf = self._buffers.get(key)
+        if not buf:
+            return []
+        now = time.monotonic() if now is None else now
+        cutoff = now - window_secs
+        return [(t_pt, v_pt) for (t_pt, v_pt) in buf if t_pt >= cutoff]

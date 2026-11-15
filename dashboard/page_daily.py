@@ -317,6 +317,16 @@ class DailyCockpitPage(Page):
 
     # ── Per-Frame Lifecycle ──────────────────────────────────────────────────
 
+    def reset_histories(self):
+        """Clear rolling sparklines when switching between Mock and Real modes."""
+        self._econ_hist.clear()
+        self._econ_hist.extend([0.0] * 48)
+        self._speed_hist.clear()
+        self._speed_hist.extend([0.0] * 48)
+        self._rpm_disp = 0.0
+        self._speed_disp = 0.0
+        self._last_hist_t = 0.0
+
     def update(self, data: dict):
         self._data = data
         now = time.monotonic()
@@ -373,7 +383,9 @@ class DailyCockpitPage(Page):
         dot_x = W // 2 - self._hdr_half_w - 12
         gfxdraw.filled_circle(cv, dot_x, 24, 4, dot_col)
         gfxdraw.aacircle(cv, dot_x, 24, 4, dot_col)
-        if connected and obd_port:
+        if settings.enabled("mock_mode"):
+            cv.blit(self._txt(t("mode.badge_mock"), 11, AMBER_TXT, mono=True), (W // 2 + self._hdr_half_w + 10, 18))
+        elif connected and obd_port:
             cv.blit(self._txt(obd_port, 11, TXT_MUTED, mono=True), (W // 2 + self._hdr_half_w + 10, 18))
 
         show_batt = settings.enabled("console_battery")

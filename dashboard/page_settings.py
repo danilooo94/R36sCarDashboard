@@ -32,6 +32,7 @@ _VISIBLE_ROWS  = 7
 
 # Ordered list of configurable entries: (kind, key, label_i18n_key)
 _ITEMS = [
+    ("mode",   "mock_mode",       "settings.item.mock_mode"),
     ("lang",   "language",        "settings.item.language"),
     ("toggle", "data_logging",    "settings.item.data_logging"),
     ("toggle", "turbo",           "settings.item.turbo"),
@@ -90,7 +91,9 @@ class SettingsPage(Page):
 
     def _activate(self):
         kind, key, _ = _ITEMS[self.selected]
-        if kind == "lang":
+        if kind == "mode":
+            settings.toggle(key)
+        elif kind == "lang":
             settings.cycle_language()
             pygame.display.set_caption(t("app.window_title"))
         elif kind == "toggle":
@@ -230,7 +233,14 @@ class SettingsPage(Page):
             cv.blit(lbl_surf, (r.x + 16, r.centery - lbl_surf.get_height() // 2))
 
             right_edge = r.right - 14
-            if kind == "lang":
+            if kind == "mode":
+                is_mock = settings.enabled(key)
+                mode_lbl = t("settings.mode_mock") if is_mock else t("settings.mode_real")
+                val_txt = f"< {mode_lbl} >"
+                col = AMBER_TXT if is_mock else (SKY if is_sel else TEAL)
+                badge = self._font_badge.render(val_txt, True, col)
+                cv.blit(badge, (right_edge - badge.get_width(), r.centery - badge.get_height() // 2))
+            elif kind == "lang":
                 val_txt = f"< {t('lang.name')} >"
                 badge = self._font_badge.render(val_txt, True, SKY if is_sel else TEAL)
                 cv.blit(badge, (right_edge - badge.get_width(), r.centery - badge.get_height() // 2))
